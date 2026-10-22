@@ -1,0 +1,7 @@
+{
+  "kraken": {
+    "note": "Kraken's own pair names, as in its OHLCVT archives: XBT is BTC, XDG is DOGE. Nothing downloads until you press Download Kraken history in Settings, Market data.",
+    "pairs": ["XBTUSD", "ETHUSD", "XRPUSD", "SOLUSD"],
+    "automatic": false
+  }
+}

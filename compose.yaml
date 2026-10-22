@@ -1,0 +1,35 @@
+# AskCharts on a server. Copy .env.example to .env, fill it in, then: docker compose up -d
+# The server guide (docs/server.md) walks through it.
+services:
+  askcharts:
+    build: .
+    image: askcharts:local
+    restart: unless-stopped
+    # Only this server can reach it. A Cloudflare tunnel (below) or a reverse proxy with HTTPS puts it
+    # online. Never publish it on every address: Docker's ports skip the firewall.
+    ports:
+      - "127.0.0.1:${ASKCHARTS_PORT:-3778}:3778"
+    environment:
+      ASKCHARTS_ORIGIN: "${ASKCHARTS_ORIGIN:?set ASKCHARTS_ORIGIN in .env, like https://charts.example.com}"
+      ASKCHARTS_EMAIL: "${ASKCHARTS_EMAIL:?set ASKCHARTS_EMAIL in .env (the account that signs in)}"
+      MAIL_MODE: "${MAIL_MODE:-log}"
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      MAIL_FROM: "${MAIL_FROM:-}"
+    volumes:
+      - askcharts-data:/data
+
+  # Optional: a Cloudflare tunnel to your domain, no open ports. Start it with
+  #   docker compose --profile tunnel up -d
+  # and point the tunnel's public hostname at http://askcharts:3778
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    depends_on:
+      - askcharts
+
+volumes:
+  askcharts-data:

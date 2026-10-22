@@ -1,0 +1,19 @@
+{
+  "name": "askcharts-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Passkey sign-in in front of AskCharts on a server.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.3"
+  }
+}

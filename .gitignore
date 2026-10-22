@@ -1,0 +1,5 @@
+# your data, when AskCharts runs from this folder: charts, settings, indicators, stores, passkeys
+/data/
+node_modules/
+.DS_Store
+.env

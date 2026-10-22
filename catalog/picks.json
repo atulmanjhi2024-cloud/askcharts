@@ -1,0 +1,30 @@
+[
+  {
+    "repo": "everget/tradingview-pinescript-indicators",
+    "path": "trailing_stops/supertrend.pine"
+  },
+  {
+    "repo": "everget/tradingview-pinescript-indicators",
+    "path": "trailing_stops/halftrend.pine"
+  },
+  {
+    "repo": "everget/tradingview-pinescript-indicators",
+    "path": "trailing_stops/chandelier_exit.pine"
+  },
+  {
+    "repo": "everget/tradingview-pinescript-indicators",
+    "path": "trailing_stops/parabolic_sar.pine"
+  },
+  {
+    "repo": "geraked/tradingview",
+    "path": "strategies/CEZLSMA.pine"
+  },
+  {
+    "repo": "geraked/tradingview",
+    "path": "strategies/LRCUTB.pine"
+  },
+  {
+    "repo": "Alorse/pinescript-strategies",
+    "path": "strategies/other/Full Candle.pine"
+  }
+]
