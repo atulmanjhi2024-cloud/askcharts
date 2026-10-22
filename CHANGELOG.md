@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.8 (2026-10-22)
+
+Settings, Updates makes the next step plain.
+
+- When a new version is out, Update comes first, in the accent colour, with a line that says to press it.
+- Check now always shows that it ran ("Checked just now"), even when nothing changed.
+- An install that updates from its own address instead of GitHub says so under the switch.
+
+## 0.1.7 (2026-10-22)
+
+On a server, the app stays on its own port when the sign in is on.
+
+- AskCharts used to move the app to the next free port when its own was taken, and with the sign in on, that
+  could be the sign in's own port, where your proxy or tunnel sends people. Now it doesn't start and says which
+  port is taken, so nothing reaches the app without signing in. On your own computer nothing changes.
+
+## 0.1.6 (2026-10-22)
+
+AskCharts can run on a server without Docker.
+
+- The passkey sign in comes with AskCharts now (its two packages are in the release), so an install made with
+  the install line can run it in front of AskCharts on a server, and update itself from Settings, Updates.
+  Docker installs are unchanged.
+
 ## 0.1.5 (2026-10-22)
 
 AskCharts can update itself now: Settings, Updates.

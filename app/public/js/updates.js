@@ -20,7 +20,8 @@ const notes = (text) =>
     .join("")}</ul>`;
 
 export function updatesPage() {
-  const st = { s: null, err: "", waiting: 0, flash: "", slow: false };
+  // checking: Check now pressed and not answered yet; checked: answered, so the line says it just ran
+  const st = { s: null, err: "", waiting: 0, flash: "", slow: false, checking: false, checked: false };
   const page = {
     async load() {
       try {
@@ -40,18 +41,24 @@ export function updatesPage() {
       const r = s.result;
       if (r?.at && Date.now() - Date.parse(r.at) < 7 * 86400e3)
         h.push(r.ok ? state("ok", `Updated from ${r.from || "an earlier version"} to ${r.to} on ${day(r.at)}.`) : state("err", `The update to ${r.to || "the new version"} didn't work: ${r.reason}. AskCharts is still on ${s.version}.`));
-      const busy = s.state !== "idle" || st.waiting;
+      const busy = s.state !== "idle" || st.waiting || st.checking;
       if (s.state === "downloading") h.push(state("busy", "Downloading the update and checking its signature and every file…"));
       else if (s.state === "installing" || st.waiting)
         h.push(state("busy", st.slow ? "This is taking longer than it should. Reload the page in a minute; if AskCharts doesn't come back, start it again." : `Installing ${s.target || s.latest?.version || "the update"}. AskCharts restarts, and this page comes back by itself.`));
-      else if (s.state === "checking") h.push(state("busy", "Checking…"));
+      else if (s.state === "checking" || st.checking) h.push(state("busy", "Checking…"));
       else if (s.error) h.push(state("err", `That didn't work: ${s.error}`));
-      else if (s.latest) h.push(s.newer ? state("warn", `AskCharts ${s.latest.version} is out (${s.latest.date}).`) : state("ok", `This is the latest version (checked ${day(s.checkedAt)}).`));
-      else h.push(state("warn", "Not checked yet."));
+      else if (s.latest) {
+        const just = st.checked ? "Checked just now: " : "";
+        h.push(s.newer ? state("warn", `${just}AskCharts ${s.latest.version} is out (${s.latest.date}).`) : state("ok", st.checked ? "Checked just now: this is the latest version." : `This is the latest version (checked ${day(s.checkedAt)}).`));
+      } else h.push(state("warn", "Not checked yet."));
       if (s.newer && s.latest?.notes) h.push(notes(s.latest.notes));
       const check = `<button class="btn" data-up="check" ${busy ? "disabled" : ""}>Check now</button>`;
       if (s.kind === "desktop" && s.updatable) {
-        h.push(`<div class="md-acts">${check}${s.newer ? `<button class="btn" data-up="install" ${busy ? "disabled" : ""}>Update to ${esc(s.latest.version)}</button>` : ""}</div>`);
+        // a new version: Update first and in the accent, with a line that says to press it
+        if (s.newer) {
+          if (!busy) h.push(`<p class="ai-lead">Press Update to ${esc(s.latest.version)} to install it. AskCharts restarts, and this page comes back by itself.</p>`);
+          h.push(`<div class="md-acts"><button class="btn primary" data-up="install" ${busy ? "disabled" : ""}>Update to ${esc(s.latest.version)}</button>${check}</div>`);
+        } else h.push(`<div class="md-acts">${check}</div>`);
         h.push("<div class=\"ai-sub md-tight\">Before anything stops, the update's signature and every file are checked. Your charts, settings and keys stay. If the new version doesn't start, the old one comes back by itself.</div>");
       } else if (s.kind === "desktop") {
         // Windows, until Update now has been tried there
@@ -67,23 +74,39 @@ export function updatesPage() {
         h.push(`<div class="md-acts">${check}</div><div class="ai-sub md-tight">This AskCharts can't update itself here. To update, paste the install line from the README again (into PowerShell on Windows); your charts and settings stay.</div>`);
       }
       h.push(`<label class="cs-chk"><input type="checkbox" data-up="auto" ${s.autoCheck ? "checked" : ""}><span class="cs-box"></span><span>Check for updates once a day</span></label>`);
-      h.push("<div class=\"ai-sub md-tight\">The check downloads the newest release's version and notes from GitHub, which sees the request, as with any download. Nothing about you or your charts is sent.</div>");
+      // where the check looks: GitHub, or the update address this AskCharts was installed with
+      h.push(`<div class="ai-sub md-tight">${s.updateHost ? `The check downloads the newest release's version and notes from ${esc(s.updateHost)}, the update address this AskCharts was installed with.` : "The check downloads the newest release's version and notes from GitHub, which sees the request, as with any download."} Nothing about you or your charts is sent.</div>`);
       if (st.flash) h.push(`<div class="ai-status ok">${esc(st.flash)}</div>`);
       return `${h.join("")}</div>`;
     },
     bind(el, redraw) {
+      // true when AskCharts took the request
       const act = async (body) => {
+        let ok = true;
         try {
           st.s = await api.post("/api/updates", body);
           st.err = "";
         } catch (e) {
           st.s = { ...st.s, error: e.message };
+          ok = false;
         }
         redraw();
+        return ok;
       };
       for (const b of el.querySelectorAll("[data-up]")) {
         const k = b.dataset.up;
-        if (k === "check") b.onclick = () => act({ action: "check" }).then(() => settle(redraw));
+        if (k === "check")
+          b.onclick = () => {
+            const before = st.s?.checkedAt;
+            st.checking = true;
+            st.checked = false;
+            redraw();
+            act({ action: "check" }).then((ok) => {
+              if (ok) return settle(redraw, before);
+              st.checking = false;
+              redraw();
+            });
+          };
         if (k === "install")
           b.onclick = () => {
             if (!confirm(`Update to AskCharts ${st.s.latest.version}?\n\nAskCharts restarts. Your charts, settings and keys stay.`)) return;
@@ -103,13 +126,15 @@ export function updatesPage() {
       }
     },
   };
-  // a check: a few looks until the runner is done
-  async function settle(redraw) {
-    for (let i = 0; i < 30 && st.s?.state !== "idle"; i++) {
+  // a check: a few looks until the runner has answered it (a new checkedAt), then the line says so
+  async function settle(redraw, before) {
+    for (let i = 0; i < 30 && (st.s?.state !== "idle" || st.s?.checkedAt === before); i++) {
       await sleep(1000);
       await page.load();
-      redraw();
     }
+    st.checking = false;
+    st.checked = st.s?.checkedAt !== before;
+    redraw();
   }
   // an update: AskCharts stops, swaps and starts again; when it answers with the installer's result (or the
   // runner says the download failed and nothing stopped), the page loads again on whatever is running now

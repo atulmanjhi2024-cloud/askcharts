@@ -14,7 +14,7 @@
 //   gateway/   passkeys and sessions (a server only)                  updates/   what the Updates page shows
 //
 // Settings (environment):
-//   PORT                 the app's port: 3777, or the next free one
+//   PORT                 the app's port: 3777, or the next free one (with the gateway on: that port or no start)
 //   ASKCHARTS_GATEWAY=1  run the sign-in gateway in front of the app (Docker sets it), with
 //     ASKCHARTS_ORIGIN   the address people open, like https://charts.example.com
 //     ASKCHARTS_EMAIL    the one account that can sign in
@@ -74,17 +74,34 @@ if (!fs.readdirSync(dirs.custom).length)
   for (const f of fs.readdirSync(path.join(HERE, "app", "custom")).filter((f) => f.endsWith(".js"))) fs.copyFileSync(path.join(HERE, "app", "custom", f), path.join(dirs.custom, f));
 
 // ---- the app's port: the one asked for, or the next free one
-const free = (port) =>
+const free = (port, host = "127.0.0.1") =>
   new Promise((resolve) => {
     const s = net.createServer().once("error", () => resolve(false));
-    s.listen(port, "127.0.0.1", () => s.close(() => resolve(true)));
+    s.listen(port, host, () => s.close(() => resolve(true)));
   });
 // The last port used comes first: an installed AskCharts app and the browser's storage for the site
 // are tied to the address, port included, so it shouldn't move between logins
 const LASTPORT = path.join(DATA, "last-port");
 const last = Number(fs.existsSync(LASTPORT) && fs.readFileSync(LASTPORT, "utf8"));
-let PORT = Number(process.env.PORT) || last || 3777;
-while (!(await free(PORT))) PORT++;
+const GATEWAY = process.env.ASKCHARTS_GATEWAY === "1";
+let PORT = Number(process.env.PORT) || (!GATEWAY && last) || 3777;
+if (GATEWAY) {
+  // Behind the gateway the app keeps its port: moved to the next free one, it could land on the gateway's own
+  // port, and whatever sends people there (a tunnel, a proxy) would reach the app with no sign in
+  const gwPort = Number(process.env.ASKCHARTS_GATEWAY_PORT) || 3778;
+  const why =
+    PORT === gwPort
+      ? `the app and the sign-in gateway are both set to port ${PORT}`
+      : !(await free(PORT))
+        ? `the app's port ${PORT} is taken`
+        : !(await free(gwPort, process.env.ASKCHARTS_GATEWAY_HOST || "0.0.0.0"))
+          ? `the sign-in gateway's port ${gwPort} is taken`
+          : "";
+  if (why) {
+    log("runner", `${why}: not starting (PORT and ASKCHARTS_GATEWAY_PORT set them)`);
+    process.exit(1);
+  }
+} else while (!(await free(PORT))) PORT++;
 fs.writeFileSync(PORTFILE, String(PORT));
 fs.writeFileSync(LASTPORT, String(PORT));
 
@@ -147,7 +164,7 @@ const stop = (name) => {
 run("app", [path.join("app", "server.js")], appEnv, { restart: true });
 
 // ---- the gateway, on a server
-if (process.env.ASKCHARTS_GATEWAY === "1") {
+if (GATEWAY) {
   const origin = process.env.ASKCHARTS_ORIGIN || "";
   let rpID = "";
   try {
@@ -238,7 +255,7 @@ const url = `http://localhost:${PORT}`;
     }
     await sleep(500);
   }
-  log("runner", `AskCharts is running: ${url}${process.env.ASKCHARTS_GATEWAY === "1" ? ` (behind the sign-in gateway on port ${process.env.ASKCHARTS_GATEWAY_PORT || 3778})` : ""}`);
+  log("runner", `AskCharts is running: ${url}${GATEWAY ? ` (behind the sign-in gateway on port ${process.env.ASKCHARTS_GATEWAY_PORT || 3778})` : ""}`);
   if (OPEN) openBrowser(url);
 })();
 
@@ -277,6 +294,8 @@ function writeUpdates() {
     // Docker: the folder on the server it was started from (compose.yaml passes it), for the update steps
     folder: /^(\/|[A-Za-z]:\\)/.test(process.env.ASKCHARTS_FOLDER || "") ? process.env.ASKCHARTS_FOLDER.slice(0, 300) : null,
     autoCheck: readJson(UPDATES.settings)?.autoCheck !== false,
+    // where the check looks when it isn't GitHub: the update address the installer was given (a private channel)
+    updateHost: updateBase() === RELEASES ? null : updateBase().replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "").slice(0, 100),
     ...update,
     result: readJson(UPDATES.result),
     updatedAt: new Date().toISOString(),
