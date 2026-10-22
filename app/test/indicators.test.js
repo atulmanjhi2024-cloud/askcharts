@@ -146,6 +146,30 @@ test('XRPL On chain: buckets into bars, share of all, big payments, and no data'
   // the store has nothing for these bars
   assert.match(I.compute('xrpl_moved', xb, { __onchain: { ...d, rows: [] , reason: 'No XRP Ledger data yet.' } }).error, /No XRP Ledger data yet/);
   assert.match(I.compute('xrpl_moved', xb, { __onchain: { ...d, rows: [rows[0]] } }).error, /it starts/);
+
+  // exchange flows: In up, Out below zero, Net the difference; bars with no ledger stay empty
+  const fx = { ...d, rows: [[T, 2, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 300, 120, 0, 0, 5], [T + 120, 1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 50, 0, 0, 6]] };
+  const x = I.compute('xrpl_exchanges', xb, { __onchain: fx });
+  assert.deepEqual(x.in, [300, NaN, 0, NaN, NaN, NaN]);
+  assert.deepEqual(x.out, [-120, NaN, -50, NaN, NaN, NaN]);
+  assert.deepEqual(x.net, [180, NaN, -50, NaN, NaN, NaN]);
+  assert.ok(I.compute('xrpl_exchanges', xb).error);
+  // an outage: ledgers 6 to 9 never stored. The bar after it breaks the line, the empty bars inside it say
+  // so, and the bars at its edges and a bar with a hole of its own are partial; a seconds chart's empty bar
+  // (no jump) is neither
+  const gc = [...cols, 'first'];
+  const g = (start, n, first, last) => [start, n, n, 0, 0, n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, last, first];
+  const gd = { ...d, cols: gc, rows: [g(T, 3, 1, 3), g(T + 60, 2, 4, 5), g(T + 240, 1, 10, 10), g(T + 300, 2, 11, 13)] };
+  const ga = I.compute('xrpl_activity', xb, { __onchain: gd });
+  assert.deepEqual(ga.gaps.before, [false, false, false, false, true, false]);
+  assert.deepEqual(ga.gaps.outage, [false, false, true, true, false, false]);
+  assert.deepEqual(ga.gaps.partial, [false, true, false, false, true, true]);
+  // on a seconds chart the edges aren't marked: its bars hold a ledger or two, and empty ones are normal
+  assert.deepEqual(I.compute('xrpl_activity', xb, { __onchain: { ...gd, tf: 5 } }).gaps.partial, [false, false, false, false, false, true]);
+  assert.equal(a.gaps, undefined, 'an older store reader sends no first ledger: no gaps');
+  const quiet = I.compute('xrpl_activity', xb, { __onchain: { ...gd, rows: [g(T, 3, 1, 3), g(T + 180, 1, 4, 4)] } });
+  assert.deepEqual(quiet.gaps.before, [false, false, false, false, false, false]);
+  assert.deepEqual(quiet.gaps.outage, [false, false, false, false, false, false]);
 });
 
 test('custom indicators can be registered and computed', () => {

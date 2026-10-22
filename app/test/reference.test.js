@@ -725,6 +725,7 @@ const REF = {
   fractals: null, // markers, checked in the Williams fractals test below
   xrpl_activity: null, // XRP Ledger data, not price: checked in indicators.test.js
   xrpl_moved: null, // the same
+  xrpl_exchanges: null, // the same
   zigzag: null, // checked in the Zig Zag tests below
   twap: () => ({
     value: bars.map((b) => (b.open + b.high + b.low + b.close) / 4),

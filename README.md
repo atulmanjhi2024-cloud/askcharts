@@ -115,7 +115,9 @@ Without any keys, the charts, data and everything else still work. Only AskChart
    a 50 period moving average".
 4. **More history (optional).** Settings, Market data downloads Kraken's full history (about 10 GB) and turns on
    XRPL On chain. XRPL On chain follows the XRP Ledger through a public server, which is about 15 GB of
-   downloads a day.
+   downloads a day. When it starts it also fills in up to 90 days of history from askcharts.pro (about 0.5 MB
+   a day, every file signed and checked), so the charts aren't empty. It only downloads, and you can switch it
+   off in the same place.
 
 The [quick start](docs/quick-start.md) walks through the screen: the chart, the toolbars and the panels.
 

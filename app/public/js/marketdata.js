@@ -155,7 +155,16 @@ export function marketData() {
       h += `<label class="cs-chk"><input type="checkbox" data-md="xrpl" ${o.enabled ? "checked" : ""}><span class="cs-box"></span><span>Follow the XRP Ledger</span></label>`;
       h += `<div class="md-add"><input class="cs-num ai-in" data-md="xrplserver" placeholder="wss://xrplcluster.com" autocomplete="off" spellcheck="false" value="${esc(st.ocServer ?? o.server)}"><button class="btn" data-md="xrplsave">Save server</button></div>`;
       h += `<div class="ai-sub md-tight">A public server sends about 15 GB a day to follow every ledger. If you run your own XRP Ledger node, put its WebSocket address here instead.</div>`;
-      if (o.stored) h += `<div class="md-facts"><div class="md-k">Stored</div><div class="md-v">${o.stored.ledgers.toLocaleString("en-US")} ledgers, ${esc(when(new Date(o.stored.from * 1000).toISOString()))} to ${esc(when(new Date(o.stored.to * 1000).toISOString()))}</div></div>`;
+      h += `<label class="cs-chk"><input type="checkbox" data-md="xrplhist" ${o.history ? "checked" : ""}><span class="cs-box"></span><span>Fill in history from askcharts.pro</span></label>`;
+      h += `<div class="ai-sub md-tight">Up to 90 days of ledgers from data.askcharts.pro when the collector starts, about 0.5 MB a day, every file signed and checked. Without it, the collector fills in one day back, ledger by ledger, from the server above. It only downloads; nothing is sent.</div>`;
+      const sh = c?.history;
+      const shared = !o.history ? "" : sh?.error ? `Couldn't read it last time (${sh.error})` : sh?.newest ? `Filled in up to ${when(new Date(sh.newest * 1000).toISOString())}` : "";
+      if (o.stored || shared) {
+        h += '<div class="md-facts">';
+        if (o.stored) h += `<div class="md-k">Stored</div><div class="md-v">${o.stored.ledgers.toLocaleString("en-US")} ledgers, ${esc(when(new Date(o.stored.from * 1000).toISOString()))} to ${esc(when(new Date(o.stored.to * 1000).toISOString()))}</div>`;
+        if (shared) h += `<div class="md-k">Shared history</div><div class="md-v">${esc(shared)}</div>`;
+        h += "</div>";
+      }
       return `${h}</div>`;
     },
     tone(s) {
@@ -205,6 +214,8 @@ export function marketData() {
       }
       const xon = page.querySelector('[data-md="xrpl"]');
       if (xon) xon.onchange = (e) => saveXrpl({ enabled: e.target.checked, server: st.oc?.server }, e.target.checked ? "Following the XRP Ledger. The collector starts within a few seconds." : "Stopped following the XRP Ledger. What's stored stays.");
+      const xhist = page.querySelector('[data-md="xrplhist"]');
+      if (xhist) xhist.onchange = (e) => saveXrpl({ enabled: !!st.oc?.enabled, server: st.oc?.server, history: e.target.checked }, e.target.checked ? "The collector fills in from askcharts.pro each time it starts." : "Shared history off. The collector fills in one day back, ledger by ledger.");
       const xsave = page.querySelector('[data-md="xrplsave"]');
       if (xsave) xsave.onclick = () => saveXrpl({ enabled: !!st.oc?.enabled, server: st.ocServer ?? st.oc?.server }, "Server saved.");
       const start = page.querySelector('[data-md="start"]');

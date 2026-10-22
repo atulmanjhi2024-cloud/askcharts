@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4 (2026-10-22)
+
+XRPL On chain starts with up to 90 days of history, and there's a new Exchange flows indicator.
+
+- XRPL Exchange flows, a new On chain indicator: XRP paid into and out of known exchange wallets in each bar,
+  and the net. The wallet list is partial, so the numbers are floors, and its ? says so.
+- XRPL lines break where the collector wasn't running (a laptop that was off, say) instead of drawing a straight
+  line across, and the legend says so there.
+- XRPL On chain starts with history. When the collector starts, it fills in up to 90 days of ledgers from
+  data.askcharts.pro, published hourly by the AskCharts collector that runs around the clock. Every file is
+  signed and checked before a row goes in, and only the last hour is fetched ledger by ledger. Settings,
+  Market data has a switch to turn it off. It only downloads.
+
 ## 0.1.3 (2026-10-22)
 
 AskCharts gets its own colour, and XRPL Activity gets easier to read.

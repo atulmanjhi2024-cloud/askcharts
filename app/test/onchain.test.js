@@ -31,9 +31,9 @@ test("buckets by placement time, big payments from the floor up, bad input refus
   // the reader opens a store at most once a minute; this one appeared after the first look
   const mod = await import(`../lib/onchain.js?again=${Date.now()}`);
   const r = mod.xrpl({ from: T - 600, to: T + 600, step: 60, min: 1000000 });
-  assert.deepEqual(r.cols, [...XRPL_COLS, "last"]);
-  // [start, ledgers, txs, ..., last ledger]
-  assert.deepEqual(r.buckets.map((b) => [b[0], b[1], b[2], b[2 + XRPL_COLS.indexOf("xrp")], b.at(-1)]), [[T, 2, 2, 3, 2], [T + 60, 1, 1, 1.5, 3], [T + 120, 1, 1, 1.5, 4]]);
+  assert.deepEqual(r.cols, [...XRPL_COLS, "last", "first"]);
+  // [start, ledgers, txs, ..., last ledger, first ledger]
+  assert.deepEqual(r.buckets.map((b) => [b[0], b[1], b[2], b[2 + XRPL_COLS.indexOf("xrp")], b.at(-2), b.at(-1)]), [[T, 2, 2, 3, 2, 1], [T + 60, 1, 1, 1.5, 3, 3], [T + 120, 1, 1, 1.5, 4, 4]]);
   assert.deepEqual(r.whales.map((w) => [w.hash, w.t, w.dstName, w.tag]), [["A", T + 6, "Binance", 7]]);
   assert.equal(r.first, T + 2);
   assert.equal(mod.xrpl({ from: T, to: T + 600, step: 60, min: 0 }).whales.length, 2);

@@ -17,7 +17,8 @@ export const DEFAULT_SERVER = "wss://xrplcluster.com";
 // The columns summed per bucket, in the order each bucket's list carries them (after its start time
 // and its number of ledgers), then the bucket's last ledger (its highest index).
 export const XRPL_COLS = ["txs", "failed", "batch", "money", "markets", "nfts", "accounts", "other", "xrp", "pays", "ex_in", "ex_out", "fees", "created"];
-const COLS_OUT = [...XRPL_COLS, "last"];
+// Then the first (lowest): ledger indexes run without breaks, so a jump between buckets is an outage.
+const COLS_OUT = [...XRPL_COLS, "last", "first"];
 const MAX_BUCKETS = 50000;
 const MAX_WHALES = 3000;
 const NO_DATA = "No XRP Ledger data yet. The XRPL collector (onchain/ in the AskCharts folder) fills it in.";
@@ -44,12 +45,20 @@ const int = (v, name) => {
   return n;
 };
 
-// The collector's own word (connected, how far behind, what's left to fill in, how many days it keeps),
-// when it has written one.
+// The collector's own word (connected, how far behind, what's left to fill in, how many days it keeps, and
+// the shared history it filled in from), when it has written one.
 function collector() {
   try {
     const s = JSON.parse(fs.readFileSync(STATUS, "utf8"));
-    return { connected: !!s.connected, behind: s.behind ?? null, toFill: s.toFill ?? null, updated: s.updated || null, keepDays: s.settings?.keepDays ?? null };
+    const h = s.history;
+    return {
+      connected: !!s.connected,
+      behind: s.behind ?? null,
+      toFill: s.toFill ?? null,
+      updated: s.updated || null,
+      keepDays: s.settings?.keepDays ?? null,
+      history: h ? { from: h.from || null, newest: h.newest ?? null, syncedAt: h.syncedAt || null, error: h.error || null } : null,
+    };
   } catch {
     return null;
   }
@@ -74,7 +83,7 @@ export function xrpl(q = {}) {
   if ((hi - lo) / step > MAX_BUCKETS) throw bad(`Too many buckets: pick a step of at least ${Math.ceil((hi - lo) / MAX_BUCKETS)} seconds`);
   const sums = XRPL_COLS.map((c) => `SUM(${c})`).join(", ");
   // SQLite's % works on whole numbers, so the bucket's start is whole however the step is bound
-  const buckets = hi > lo ? d.prepare(`SELECT t - (t % ?) AS b, COUNT(*) AS n, ${sums}, MAX(idx) AS last FROM ledgers WHERE t >= ? AND t < ? GROUP BY b ORDER BY b`).all(step, lo, hi).map((r) => Object.values(r)) : [];
+  const buckets = hi > lo ? d.prepare(`SELECT t - (t % ?) AS b, COUNT(*) AS n, ${sums}, MAX(idx) AS last, MIN(idx) AS first FROM ledgers WHERE t >= ? AND t < ? GROUP BY b ORDER BY b`).all(step, lo, hi).map((r) => Object.values(r)) : [];
   const whales =
     hi > lo && Number.isFinite(min)
       ? d
@@ -86,26 +95,31 @@ export function xrpl(q = {}) {
   return { ...base, buckets, whales, first: span.first, last: span.last };
 }
 
-// Settings, Market data: whether the collector follows the ledger, from which server, and how it's doing.
-export function settings() {
-  let s = {};
+// Settings, Market data: whether the collector follows the ledger, from which server, whether it fills in from
+// the shared history (on unless turned off), and how it's doing.
+function saved() {
   try {
-    s = JSON.parse(fs.readFileSync(SETTINGS, "utf8"));
+    return JSON.parse(fs.readFileSync(SETTINGS, "utf8"));
   } catch {
-    /* none yet: off */
+    return {}; // none yet: off
   }
+}
+export function settings() {
+  const s = saved();
   const d = store();
   const span = d ? d.prepare("SELECT MIN(t) AS first, MAX(t) AS last, COUNT(*) AS n FROM ledgers").get() : null;
-  return { enabled: s.enabled === true, server: s.server || DEFAULT_SERVER, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null };
+  return { enabled: s.enabled === true, server: s.server || DEFAULT_SERVER, history: s.history !== false, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null };
 }
 
 export function saveSettings(body = {}) {
   const enabled = body.enabled === true;
   const server = String(body.server ?? DEFAULT_SERVER).trim() || DEFAULT_SERVER;
+  // left out (the on/off switch, the server): kept as it was
+  const history = typeof body.history === "boolean" ? body.history : saved().history !== false;
   if (server.length > 200 || !/^wss?:\/\/[^\s/]+(\/[^\s]*)?$/.test(server)) throw bad("The server is a WebSocket address, like wss://xrplcluster.com");
   fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
   const tmp = `${SETTINGS}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ enabled, server }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(tmp, JSON.stringify({ enabled, server, history }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, SETTINGS);
   return settings();
 }

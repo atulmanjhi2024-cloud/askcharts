@@ -96,6 +96,52 @@ function replace(db, b, res) {
   rows.filter((r) => windowOf(r) === b).forEach((r, k) => upd.run(ts[k], r.idx));
 }
 
+// Shared history: a published chunk's rows (xrpl-history.mjs decodeChunk) in without overwriting, so the
+// store's own rows win. The 10 second windows that got new rows are placed again, which comes out exactly as
+// on the publishing machine. Big payments come in with their ledgers only. Returns the runs of ledgers that
+// went in ([first, last] each), so a revoked chunk's rows can be taken out again.
+export function importChunk(db, ledgers, whales) {
+  const ins = db.prepare(`INSERT OR IGNORE INTO ledgers (${COLS.join(", ")}) VALUES (${COLS.map(() => "?").join(", ")})`);
+  const insW = db.prepare("INSERT OR IGNORE INTO whales (hash, idx, src, dst, tag, xrp, src_name, dst_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  const runs = [],
+    windows = new Map();
+  db.exec("BEGIN");
+  try {
+    for (const r of ledgers) {
+      if (!ins.run(...COLS.map((c) => (c === "t" ? r.close : c === "seen" ? null : r[c]))).changes) continue;
+      const run = runs.at(-1);
+      if (run && run[1] === r.idx - 1) run[1] = r.idx;
+      else runs.push([r.idx, r.idx]);
+      windows.set(windowOf(r), r.res);
+    }
+    for (const w of whales) if (runs.some(([a, b]) => w.idx >= a && w.idx <= b)) insW.run(w.hash, w.idx, w.src, w.dst, w.tag, w.xrp, w.src_name, w.dst_name);
+    for (const [b, res] of windows) replace(db, b, res);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+  return runs;
+}
+
+// Ledgers first to last (inclusive) out, with their big payments: a revoked chunk's imported rows.
+export function dropLedgers(db, first, last) {
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM whales WHERE idx BETWEEN ? AND ?").run(first, last);
+    const n = Number(db.prepare("DELETE FROM ledgers WHERE idx BETWEEN ? AND ?").run(first, last).changes);
+    db.exec("COMMIT");
+    return n;
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+// Small values the collector keeps between runs (the state table).
+export const getState = (db, k) => db.prepare("SELECT v FROM state WHERE k = ?").get(k)?.v ?? null;
+export const setState = (db, k, v) => db.prepare("INSERT OR REPLACE INTO state (k, v) VALUES (?, ?)").run(k, v);
+
 // Indexes missing between lo and hi (inclusive), newest first, at most `limit`.
 export function missing(db, lo, hi, limit = 1000) {
   const out = [];

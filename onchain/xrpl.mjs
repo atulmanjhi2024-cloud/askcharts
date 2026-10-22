@@ -2,7 +2,9 @@
 // stream says when one is in; the `ledger` command brings it whole) and keeps a row per ledger in
 // data/xrpl.sqlite. Between new ledgers it fills in the past, newest first, at a gentle pace and only as
 // far back as the server holds and XRPL_BACKFILL_DAYS asks; a ledger missed while disconnected is filled
-// in the same way. Node only, no packages: the WebSocket and SQLite are built in.
+// in the same way. With XRPL_HISTORY_URL set, the shared history goes first (history-sync.mjs): the hours it
+// has come in whole, and only what it hasn't is filled ledger by ledger. Node only, no packages: the WebSocket
+// and SQLite are built in.
 //
 //   node onchain/xrpl.mjs run              follow the ledger (the systemd service runs this)
 //   node onchain/xrpl.mjs status           what's stored, and the collector's last status
@@ -14,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, saveLedger, missing, span, prune, relabel, writeStatus, STATUS_FILE } from "./db.mjs";
 import { summarize, ranges, EXCHANGES } from "./xrpl-ledger.mjs";
+import { syncHistory } from "./history-sync.mjs";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== "" && v != null ? Number(v) : d);
 // A public full history server by default; point XRPL_SERVER at your own node to spare the public one.
@@ -21,6 +24,8 @@ const SERVER = process.env.XRPL_SERVER || "wss://xrplcluster.com";
 const KEEP_DAYS = num(process.env.XRPL_KEEP_DAYS, 90);
 const BACKFILL_DAYS = Math.min(num(process.env.XRPL_BACKFILL_DAYS, 1), KEEP_DAYS);
 const PACE = Math.max(0.2, num(process.env.XRPL_PACE, 5)); // ledgers a second while filling in
+// shared history (data.askcharts.pro); empty: off, as on the machine that publishes it
+const HISTORY_URL = (process.env.XRPL_HISTORY_URL || "").replace(/\/+$/, "");
 const TIMEOUT = 30000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -103,8 +108,9 @@ async function fetchLedger(link, idx) {
   return r.ledger;
 }
 
-// Follow until the connection drops. st is the status, kept between connections.
-async function follow(db, st) {
+// Follow until the connection drops. st is the status, kept between connections. sync: the shared history,
+// run before the ledger by ledger fill (new ledgers keep coming in meanwhile).
+async function follow(db, st, sync) {
   const live = [];
   let wake = () => {};
   const link = await connect(SERVER, (m) => {
@@ -152,8 +158,15 @@ async function follow(db, st) {
     }
   };
   let lastStatus = 0;
+  let ready = !sync;
+  if (sync)
+    sync().finally(() => {
+      ready = true;
+      wake();
+    });
   while (link.open) {
     if (live.length) await save(live.shift(), Math.round(now()));
+    else if (!ready) await Promise.race([new Promise((r) => (wake = r)), sleep(5000), closed]);
     else {
       if (!todo.length) todo = plan();
       if (todo.length) {
@@ -187,6 +200,7 @@ function status(db, st, floor) {
     toFill: want != null ? Math.max(0, want - have) : null,
     stored: { first: s.first, last: s.last, count: s.count, from: iso(s.from), to: iso(s.to) },
     settings: { backfillDays: BACKFILL_DAYS, keepDays: KEEP_DAYS, pace: PACE },
+    history: st.history,
     saved: st.saved,
     pruned: st.pruned,
     errors: st.errors,
@@ -199,7 +213,20 @@ function status(db, st, floor) {
 async function run() {
   const db = openDb();
   db.exec("PRAGMA busy_timeout = 5000");
-  const st = { connected: false, latest: null, available: [], saved: 0, pruned: 0, prunedAt: 0, errors: 0, lastError: null };
+  const st = { connected: false, latest: null, available: [], saved: 0, pruned: 0, prunedAt: 0, errors: 0, lastError: null, history: null };
+  // the shared history: one sync at a time, on each connection and then hourly
+  let syncing = null;
+  const sync = !HISTORY_URL
+    ? null
+    : () =>
+        (syncing ||= syncHistory({ db, url: HISTORY_URL, keepDays: KEEP_DAYS, log: (m) => console.error(`${iso(now())} shared history: ${m}`) })
+          .then((r) => (st.history = { from: host(HISTORY_URL), ...r, syncedAt: iso(now()), error: null }))
+          .catch((e) => {
+            st.history = { ...st.history, from: host(HISTORY_URL), syncedAt: iso(now()), error: e.message };
+            console.error(`${iso(now())} shared history: ${e.message}`);
+          })
+          .finally(() => (syncing = null)));
+  if (sync) setInterval(sync, 3600e3);
   let wait = 2;
   let stopping = false;
   for (const sig of ["SIGTERM", "SIGINT"])
@@ -212,7 +239,7 @@ async function run() {
   while (!stopping) {
     const t0 = now();
     try {
-      await follow(db, st);
+      await follow(db, st, sync);
     } catch (e) {
       st.errors++;
       st.lastError = e.message;

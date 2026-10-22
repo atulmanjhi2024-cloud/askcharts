@@ -2558,6 +2558,7 @@ export const INDICATORS = [
           [
             "The newest bar is still adding up. In Count its segment is faded and usually dips until the bar closes. Per ledger doesn't dip.",
             "On 1 and 5 second charts many bars hold no ledger, so the line runs straight on to the next one. It can stop a few seconds short of the newest bar: close times are rounded to 10 seconds, and a ledger arrives a few seconds after it closes.",
+            "A break in a line means the collector wasn't running for a while, so those ledgers were never stored. The legend says so over the break, and a bar that's missing some of its ledgers says that too.",
           ],
         ],
         ["Where the numbers come from", ["AskCharts' own collector reads every validated ledger from an XRP Ledger server and stores a row for each one."]],
@@ -2615,6 +2616,61 @@ export const INDICATORS = [
         ...(p.marks ? { markers: whaleMarkers(bars, d, p.whale) } : {}),
       })),
   },
+  // XRP paid into and out of known exchange wallets (the collector's list, partial: the real flows are bigger)
+  {
+    id: "xrpl_exchanges",
+    name: "XRPL Exchange flows",
+    group: "On chain",
+    onchain: "xrpl",
+    overlay: false,
+    volumeFormat: true,
+    labelValues: true,
+    // three labels on the scale only pile up: the legend names them
+    scaleLabels: false,
+    // Net is a line: joined across bars with no ledger, its newest segment faded while that bar adds up
+    bridgeGaps: true,
+    partialNewest: () => true,
+    info: {
+      title: "XRPL Exchange flows",
+      lead: "XRP paid into and out of known exchange wallets in each bar. The list of wallets is partial, so the real flows are bigger than these.",
+      rows: [
+        ["in", "XRP paid to a known exchange wallet from anywhere else"],
+        ["out", "XRP paid from a known exchange wallet to anywhere else, drawn below zero"],
+        ["net", "In minus Out. Above zero, more XRP went into exchanges than came out"],
+      ],
+      sections: [
+        [
+          "What counts",
+          [
+            "Successful XRP payments only. Trades on the ledger's own exchange (XRPL Activity's Markets) and other tokens aren't in it.",
+            "A payment between two wallets of one exchange, or from one exchange to another, counts as neither In nor Out.",
+          ],
+        ],
+        [
+          "The wallet list",
+          [
+            "It comes from XRPScan's labels and covers the big exchanges (Binance, Coinbase, Kraken, Bitstamp, Upbit and others), but only some of their wallets: Coinbase alone runs hundreds. Read these numbers as floors.",
+          ],
+        ],
+        [
+          "Reading it",
+          [
+            "A run of bars above zero is often read as holders getting ready to sell, and a run below zero as XRP leaving exchanges for people's own wallets. On its own it's a hint, not a signal.",
+            "The newest bar is still adding up, so its bars are short and its Net segment is faded until it closes.",
+            "A break in the Net line, or bars missing, means the collector wasn't running for a while. The legend says so there.",
+          ],
+        ],
+        ["Where the numbers come from", ["AskCharts' own collector reads every validated ledger from an XRP Ledger server and stores a row for each one."]],
+      ],
+    },
+    outputs: [hist("in", "In", "#f23645"), hist("out", "Out", "#089981"), line("net", "Net", "#b2b5be")],
+    calc: (bars, p) =>
+      xrplCalc(bars, p, ["in", "out", "net"], (x) => {
+        const into = x.col("ex_in"),
+          out = x.col("ex_out");
+        return { in: into, out: out.map((v) => -v), net: into.map((v, k) => v - out[k]) };
+      }),
+  },
 ];
 
 // ---------- XRPL On chain: the XRP Ledger collector's store (onchain/ beside the app) ----------
@@ -2633,13 +2689,14 @@ function xrplCalc(bars, p, keys, make) {
   // counts add up, the last ledger is the highest
   if (n) {
     const end = bars[n - 1].time + d.tf,
-      lastK = d.cols.includes("last") ? d.cols.indexOf("last") + 2 : -1;
+      lastK = d.cols.includes("last") ? d.cols.indexOf("last") + 2 : -1,
+      firstK = d.cols.includes("first") ? d.cols.indexOf("first") + 2 : -1;
     let i = 0;
     for (const r of d.rows) {
       if (r[0] < bars[0].time || r[0] >= end) continue;
       while (i + 1 < n && bars[i + 1].time <= r[0]) i++;
       const s = sums.get(i);
-      if (s) for (let k = 1; k < r.length; k++) s[k] = k === lastK ? Math.max(s[k], r[k]) : s[k] + r[k];
+      if (s) for (let k = 1; k < r.length; k++) s[k] = k === lastK ? Math.max(s[k], r[k]) : k === firstK ? Math.min(s[k], r[k]) : s[k] + r[k];
       else sums.set(i, r.slice());
     }
   }
@@ -2652,7 +2709,30 @@ function xrplCalc(bars, p, keys, make) {
     const k = name === "n" ? 1 : d.cols.indexOf(name) + 2;
     return bars.map((_, j) => sums.get(j)?.[k] ?? NaN);
   };
-  return make({ col }, d);
+  return { ...make({ col }, d), ...(d.cols.includes("first") ? { gaps: xrplGaps(col("first"), col("last"), col("n"), d.tf >= 60) } : {}) };
+}
+
+// Ledger indexes run without breaks, so a jump between two bars' ledgers is an outage (the collector wasn't
+// running), unlike a bar on a seconds chart that no ledger closed in. before: the bar after an outage (a line
+// breaks into it); outage: the empty bars inside one; partial: a bar that's missing some of its own ledgers,
+// with a hole inside it or, on bars of a minute and up (hundreds of ledgers each), at either edge of an outage.
+function xrplGaps(first, last, count, edges) {
+  const n = count.length,
+    before = new Array(n).fill(false),
+    outage = new Array(n).fill(false),
+    partial = new Array(n).fill(false);
+  let prev = -1;
+  for (let j = 0; j < n; j++) {
+    if (!Number.isFinite(count[j])) continue;
+    if (last[j] - first[j] + 1 > count[j]) partial[j] = true;
+    if (prev >= 0 && first[j] - last[prev] > 1) {
+      before[j] = true;
+      if (edges) partial[prev] = partial[j] = true;
+      for (let k = prev + 1; k < j; k++) outage[k] = true;
+    }
+    prev = j;
+  }
+  return { before, outage, partial };
 }
 
 const xrpAmount = (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : `${Math.round(v / 1e3)}K`).replace(".0", "");

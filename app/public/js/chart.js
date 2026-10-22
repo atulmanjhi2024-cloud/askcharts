@@ -89,11 +89,16 @@ export const newUid = () =>
 const CLEAR = "rgba(0,0,0,0)";
 // A line joined across bars with no value (XRPL On chain on a seconds chart, where many bars hold no
 // ledger): those bars get no point at all, so the line runs straight from one value to the next.
-// lastColor: the colour of the segment into the newest bar while that bar is still adding up.
-function bridgedLineData(vals, timeAt, n, lastColor) {
+// lastColor: the colour of the segment into the newest bar while that bar is still adding up. breakBefore: the
+// bars after an outage (XRPL: a jump in ledger index), where the line breaks instead.
+function bridgedLineData(vals, timeAt, n, lastColor, breakBefore) {
   const out = [];
-  for (let i = 0; i < Math.min(vals.length, n); i++) if (Number.isFinite(vals[i])) out.push({ time: timeAt(i), value: vals[i] });
-  if (lastColor && out.length > 1 && out.at(-1).time === timeAt(n - 1)) out.at(-2).color = lastColor;
+  for (let i = 0; i < Math.min(vals.length, n); i++) {
+    if (!Number.isFinite(vals[i])) continue;
+    if (breakBefore?.[i] && out.length) out.at(-1).color = CLEAR;
+    out.push({ time: timeAt(i), value: vals[i] });
+  }
+  if (lastColor && out.length > 1 && out.at(-1).time === timeAt(n - 1) && !out.at(-2).color) out.at(-2).color = lastColor;
   return out;
 }
 
@@ -1280,12 +1285,15 @@ export class ChartPane {
     return c;
   }
 
-  // When the store's history starts, in the chart's zone and clock ("19 Oct '26 4:00 AM"), on a daily
-  // chart too (toChart keeps those in UTC)
-  onchainSince(c) {
-    if (!c?.first) return "";
-    const t = c.first + tzOffset(this.zone, c.first);
+  // A store time in the chart's zone and clock ("19 Oct '26 4:00 AM"), on a daily chart too (toChart keeps
+  // those in UTC)
+  onchainTime(utc) {
+    const t = utc + tzOffset(this.zone, utc);
     return `${fmtDate(t, this.cs.dateFormat)} ${fmtClock(t, this.cs.hours === "12")}`;
+  }
+  // When the store's history starts
+  onchainSince(c) {
+    return c?.first ? this.onchainTime(c.first) : "";
   }
 
   // On the bars before the store's first ledger, what the legend and the pane say. Not where a seconds
@@ -1313,6 +1321,10 @@ export class ChartPane {
     const keep = c.collector?.keepDays,
       st = c.collector;
     const out = [`The history here starts ${this.onchainSince(c)}, and the pane is empty before that. It grows by a day each day${keep ? `, up to ${keep} days` : ""}.`];
+    // the shared history (the collector fills in from data.askcharts.pro when it's on)
+    const h = st?.history;
+    if (h?.error) out.push(`The shared history from ${h.from} couldn't be read last time (${h.error}). The collector fills in ledger by ledger meanwhile.`);
+    else if (h?.newest) out.push(`The shared history from ${h.from} is filled in up to ${this.onchainTime(h.newest)}; newer ledgers come straight from the XRP Ledger.`);
     if (st) {
       const quiet = st.updated ? Math.floor((Date.now() - Date.parse(st.updated)) / 60000) : 0;
       out.push(
@@ -1475,7 +1487,7 @@ export class ChartPane {
           out.kind === "histogram"
             ? histData(vals, colorsOf || res.colors, timeAt, n)
             : def.bridgeGaps && (type === "line" || type === "step")
-              ? bridgedLineData(vals, timeAt, n, forming && fade(color, 0.3))
+              ? bridgedLineData(vals, timeAt, n, forming && fade(color, 0.3), res.gaps?.before)
               : lineData(vals, res.breaks, timeAt, n, colorsOf),
         );
         list.push(s);
@@ -1725,11 +1737,13 @@ export class ChartPane {
       // values that come and go); on a bar with none, inside the data, it says so.
       let at = i,
         none = false,
+        outage = false,
         before = "";
       if (def.onchain && !res.error && !res.pending) {
         const has = (j) => def.outputs.some((o) => Number.isFinite(res[o.key]?.[j]));
         if (index == null) while (at > 0 && !has(at)) at--;
         else if (!has(i)) {
+          outage = !!res.gaps?.outage?.[i];
           none = def.outputs.some((o) => res[o.key]?.slice(0, i).some(Number.isFinite));
           if (!none) before = this.onchainBefore(def);
         }
@@ -1738,6 +1752,8 @@ export class ChartPane {
         ? `<span class="down">${esc(res.error)}</span>`
         : res.pending
           ? '<span class="muted">loading…</span>'
+          : outage
+            ? '<span class="muted">No data here: the collector wasn\'t running</span>'
           : none
             ? '<span class="muted">No ledger closed in this bar</span>'
             : before
@@ -1754,7 +1770,9 @@ export class ChartPane {
               })
               // named values get a faint bar between them ("Money 3,318 | Markets 11,209")
               .filter((s) => !def.labelValues || s)
-              .join(def.labelValues ? '<span class="lg-sep">|</span>' : " ");
+              .join(def.labelValues ? '<span class="lg-sep">|</span>' : " ") +
+            // XRPL On chain: a bar with a hole of its own (the collector stopped or started inside it)
+            (res.gaps?.partial?.[at] ? '<span class="lg-sep">|</span><span class="muted">some ledgers missing</span>' : "");
       const short =
         /\(([^)]+)\)$/.exec(def.name)?.[1].split(" / ")[0] || def.name;
       // Settings, Status line: indicator titles, their inputs, values and the row background

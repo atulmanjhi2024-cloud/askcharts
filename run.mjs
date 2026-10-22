@@ -194,9 +194,12 @@ setTimeout(() => {
   setInterval(() => automatic() && history("update"), 3600e3);
 }, 600e3);
 
-// ---- XRPL On chain: on, off and which server, from Settings, Market data
+// ---- XRPL On chain: on, off, which server and the shared history, from Settings, Market data
 const xrplSettings = path.join(dirs.onchain, "settings.json");
-let xrplServer = null;
+// the shared history: up to 90 days of ledgers, published hourly and signed (onchain/history-sync.mjs)
+const XRPL_HISTORY = "https://data.askcharts.pro";
+let xrplServer = null,
+  xrplHistory = null;
 setInterval(() => {
   let s = {};
   try {
@@ -205,15 +208,17 @@ setInterval(() => {
     /* never turned on */
   }
   const on = s.enabled === true,
-    server = s.server || "wss://xrplcluster.com";
-  if (kids.has("xrpl") && (!on || server !== xrplServer)) {
-    log("runner", on ? `XRPL On chain: switching to ${server}` : "XRPL On chain: turned off");
+    server = s.server || "wss://xrplcluster.com",
+    history = s.history !== false;
+  if (kids.has("xrpl") && (!on || server !== xrplServer || history !== xrplHistory)) {
+    log("runner", !on ? "XRPL On chain: turned off" : server !== xrplServer ? `XRPL On chain: switching to ${server}` : `XRPL On chain: shared history ${history ? "on" : "off"}`);
     stop("xrpl");
   }
   if (on && !kids.has("xrpl")) {
     xrplServer = server;
-    log("runner", `XRPL On chain: following the ledger through ${server}`);
-    run("xrpl", [path.join("onchain", "xrpl.mjs"), "run"], { ...base, ONCHAIN_DATA: dirs.onchain, XRPL_SERVER: server, XRPL_BACKFILL_DAYS: "1", XRPL_KEEP_DAYS: "90", XRPL_PACE: "5" });
+    xrplHistory = history;
+    log("runner", `XRPL On chain: following the ledger through ${server}${history ? `, history from ${XRPL_HISTORY}` : ""}`);
+    run("xrpl", [path.join("onchain", "xrpl.mjs"), "run"], { ...base, ONCHAIN_DATA: dirs.onchain, XRPL_SERVER: server, XRPL_HISTORY_URL: history ? XRPL_HISTORY : "", XRPL_BACKFILL_DAYS: "1", XRPL_KEEP_DAYS: "90", XRPL_PACE: "5" });
   }
 }, 5000);
 
