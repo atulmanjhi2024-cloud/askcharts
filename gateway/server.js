@@ -25,9 +25,6 @@ export function configFromEnv(env = process.env) {
     sessionDays: Number(env.SESSION_DAYS || 7),
     linkMinutes: Number(env.LINK_MINUTES || 15),
     dataDir: env.DATA_DIR || path.join(here, "data"),
-    mailFrom: env.MAIL_FROM || "",
-    mailMode: env.MAIL_MODE || "resend",
-    resendKey: env.RESEND_API_KEY || "",
     // What sits in front, so the limits count real visitors: cloudflare (a Cloudflare tunnel),
     // forwarded (Caddy, nginx and the like), or empty (nothing: visitors connect straight here).
     trustProxy: env.TRUST_PROXY || "",
@@ -125,46 +122,13 @@ function limiter(max, windowMs) {
   };
 }
 
-// ---------- mail ----------
-function mailer(cfg) {
-  return async function sendLink({ to, url, minutes }) {
-    const text = [
-      "Open this link on the device you want to add:",
-      "",
-      url,
-      "",
-      `It works once and expires in ${minutes} minutes.`,
-      "If you didn't ask for it, ignore this email.",
-      "",
-    ].join("\n");
-    if (cfg.mailMode === "log") {
-      console.log(`[mail] to=${to} link=${url}`);
-      return;
-    }
-    // Plain text only: the domain has click tracking on, which rewrites links in HTML mail.
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cfg.resendKey}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({ from: cfg.mailFrom, to: [to], subject: "Your sign-in link", text }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!r.ok) throw new Error(`Resend answered ${r.status}`);
-    const { id } = await r.json().catch(() => ({}));
-    console.log(`[mail] sign-in link sent, resend id ${id || "?"}`);
-  };
-}
-
 // Writes that make the terminal run JavaScript on the server: saving or deleting a custom indicator,
 // and importing a signal (the terminal turns it into one). The path is already decoded, as the
 // terminal decodes it before routing.
 const runsCode = (p) => p === "/api/custom" || p.startsWith("/api/custom/") || p === "/api/import/signal";
 
 // ---------- the gateway ----------
-export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {}) {
+export function createGateway(cfg, { verifyPasskey } = {}) {
   const trustProxy = cfg.trustProxy || "";
   // A typo must not quietly put every visitor in one bucket, where a stranger's tries lock the owner out.
   if (!PROXIES.includes(trustProxy)) throw new Error(`TRUST_PROXY is "${trustProxy}": use cloudflare, forwarded, or leave it empty`);
@@ -178,14 +142,6 @@ export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {
   const [upHost, upPort] = cfg.upstream.split(":");
   const agent = new http.Agent({ keepAlive: true });
   const authLimit = limiter(30, 10 * 60_000);
-  const linkLimitIp = limiter(5, 60 * 60_000);
-  const mailLimit = limiter(10, 60 * 60_000); // emails actually sent, all addresses
-  // At most one link email per address every 10 minutes. Only the account's own address gets mail,
-  // so a stranger can spend this as easily as the owner can, and the gap is set so that doesn't hurt:
-  // shorter than a link's 15 minute life, a refused request always has a working link in the inbox,
-  // and at 6 an hour the 10 an hour cap above is never reached.
-  const linkGapMs = cfg.linkGapMs ?? 10 * 60_000;
-  const lastLinkMail = new Map(); // address -> when its last link was sent
   const cspLimit = limiter(20, 10 * 60_000);
   // A fresh passkey check buys one grant: one code-running write, from the same session, within
   // two minutes. A session alone isn't enough, so script in the page can't reach those writes.
@@ -319,20 +275,6 @@ export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {
         const { userId } = await auth.authenticationVerify({ challengeId: body.challengeId, response: body.response });
         return sendJson(res, 200, { ok: true }, { "Set-Cookie": sessionCookie(auth.createSession(userId)) });
       }
-      if (p === "/auth/link") {
-        if (!linkLimitIp(clientIp(req))) return sendJson(res, 429, { error: "Too many links asked for. Wait an hour." });
-        // Same answer whatever the address, and the email goes out after we answer. The overall
-        // cap only counts real sends, so junk addresses can't lock the account out of links.
-        sendJson(res, 200, { ok: true });
-        const link = auth.createLink(body.email);
-        if (!link) return;
-        if (Date.now() - (lastLinkMail.get(link.to) ?? -Infinity) < linkGapMs)
-          return console.error("[mail] a link went to this address less than 10 minutes ago, not sent again");
-        if (!mailLimit("all")) return console.error("[mail] hourly cap reached, link not sent");
-        lastLinkMail.set(link.to, Date.now());
-        sendLink(link).catch((e) => console.error(`[mail] failed: ${e.message}`));
-        return;
-      }
       if (p === "/auth/enrol/options") return sendJson(res, 200, await auth.registrationOptions(body.token));
       if (p === "/auth/enrol/verify") {
         const { userId } = await auth.registrationVerify({ challengeId: body.challengeId, response: body.response });
@@ -403,13 +345,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // started by AskCharts' runner (Docker): stop with it, even if it's killed outright
   if (process.send) process.on("disconnect", () => process.exit(0));
   const cfg = configFromEnv();
-  if (cfg.mailMode === "resend" && !cfg.resendKey) throw new Error("RESEND_API_KEY is not set");
-  if (cfg.mailMode === "resend" && !cfg.mailFrom) throw new Error("MAIL_FROM is not set (the sender, like AskCharts <sign-in@your-domain>)");
   const server = createGateway(cfg);
   server.listen(cfg.port, cfg.host, () => {
-    console.log(`gateway on http://${cfg.host}:${cfg.port} origin=${cfg.origin} rpID=${cfg.rpID} upstream=${cfg.upstream} mail=${cfg.mailMode} proxy=${cfg.trustProxy || "none"}`);
+    console.log(`gateway on http://${cfg.host}:${cfg.port} origin=${cfg.origin} rpID=${cfg.rpID} upstream=${cfg.upstream} proxy=${cfg.trustProxy || "none"}`);
     if (server.auth.passkeyCount() === 0)
-      console.log(`No passkey yet. Open ${cfg.origin}/login and choose "New device? Email me a link"${cfg.mailMode === "log" ? " (the link is written here), or run: node gateway/link.mjs" : ""}.`);
+      console.log("No passkey yet. Run node gateway/link.mjs (in Docker: docker compose exec askcharts node gateway/link.mjs) and open the link it prints.");
   });
   for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { server.close(() => process.exit(0)); server.closeAllConnections(); });
 }

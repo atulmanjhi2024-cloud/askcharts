@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.2 (2026-10-22)
+
+The sign-in gateway sends no email any more, plus credits, notices and the look of the About page.
+
+- The sign-in page no longer offers "New device? Email me a link", and the gateway has no route that
+  sends one. AskCharts has one owner, so nothing a stranger does should make it send mail. A new device
+  gets its passkey from a one-time link made on the server: `docker compose exec askcharts node
+  gateway/link.mjs`, the same way as the first one. The `MAIL_MODE`, `RESEND_API_KEY` and `MAIL_FROM`
+  settings are gone; you can delete them from `.env`.
+- The sign-in card no longer shows the site's address in its corner.
+- AskCharts has a home page, [askcharts.pro](https://askcharts.pro), with a demo video. The README and Settings,
+  About point to it.
+- Settings, About, the README and NOTICE now say that Pine Script, like TradingView, is a trademark of
+  TradingView, Inc. AskCharts uses the name only to say what kind of scripts it runs.
+- NOTICE carries the MIT notice for Tabler Icons, because the trend up and trend down icons in the emoji
+  picker use a line from that set.
+- The README shows the AskCharts mark beside its title, and so does Settings, About, with the tagline
+  underneath.
+
 ## 0.1.1 (2026-10-21)
 
 A security fix for the sign-in gateway, which only runs when AskCharts is on a server. Desktop installs

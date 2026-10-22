@@ -82,8 +82,10 @@ docker compose exec askcharts node gateway/link.mjs
 It prints a link that works once, for 15 minutes. Open it on the device you want to use (your phone or
 laptop), press Create passkey, and confirm with Face ID, Touch ID, Windows Hello or your phone. You're in.
 
-Another device later: run the same command again. Or set up email (below) and use "New device? Email me
-a link" on the sign-in page.
+Another device later: run the same command again. Anyone who opens the link in those 15 minutes can add a
+passkey, so open it only on your own device. The sign-in page has no way to ask for a link and AskCharts
+sends no email, so a stranger can't trigger one. Passkeys that sync (iCloud Keychain, Google Password
+Manager) reach your other devices without a link.
 
 ## 5. Add your keys
 
@@ -93,8 +95,8 @@ prices). Keys are kept on your server, in the data volume, and each is only sent
 or remove them in the same places whenever you need to.
 
 Your AI and data keys never go in the folder you cloned, so `git pull` can't touch them. The server's own
-secrets, the email key and the tunnel token if you use them, are in `.env`: git ignores it, and it stays
-readable only by you if you run `chmod 600 .env`. Don't share or commit it.
+secret, the tunnel token if you use one, is in `.env`: git ignores it, and it stays readable only by you
+if you run `chmod 600 .env`. Don't share or commit it.
 
 ## Everyday
 
@@ -109,19 +111,6 @@ readable only by you if you run `chmod 600 .env`. Don't share or commit it.
 
   (The volume's name starts with your folder's name: `askcharts_` if you cloned into `askcharts`.)
 - **Sign out:** from the AskCharts logo, on each device. A session ends by itself after 7 days.
-
-## Email for sign-in links (optional)
-
-By default, links go to the log (`MAIL_MODE=log`). To have "New device? Email me a link" send an email,
-make a free account at resend.com, verify your domain, create a sending-only API key, and set in `.env`:
-
-```
-MAIL_MODE=resend
-RESEND_API_KEY=re_...
-MAIL_FROM=AskCharts <sign-in@yourdomain.com>
-```
-
-Then `docker compose up -d`.
 
 ## Keep it safe
 

@@ -2426,8 +2426,11 @@ select.cs-num.ai-in { padding-right: 8px; }
 .ab-wrap { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; max-width: 480px; font-size: 13px; line-height: 1.5; }
 .ab-wrap p { margin: 0 0 8px; color: var(--muted); }
 .ab-wrap a { color: var(--accent); }
-.ab-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.ab-name { font-size: 18px; font-weight: 700; color: var(--text); }
+.ab-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+/* the mark right of the name, as in the README: its frame is cut to the drawing, so the tip of the
+   bubble's tail sits on the name's baseline */
+.ab-name { display: flex; align-items: baseline; gap: 6px; font-size: 18px; font-weight: 700; color: var(--text); }
+.ab-mark { flex: none; }
 .ab-sub { color: var(--muted); }
 .ab-h { font-weight: 600; color: var(--text); }
 .ab-small { font-size: 12px; }

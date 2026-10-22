@@ -12,9 +12,6 @@ services:
     environment:
       ASKCHARTS_ORIGIN: "${ASKCHARTS_ORIGIN:?set ASKCHARTS_ORIGIN in .env, like https://charts.example.com}"
       ASKCHARTS_EMAIL: "${ASKCHARTS_EMAIL:?set ASKCHARTS_EMAIL in .env (the account that signs in)}"
-      MAIL_MODE: "${MAIL_MODE:-log}"
-      RESEND_API_KEY: "${RESEND_API_KEY:-}"
-      MAIL_FROM: "${MAIL_FROM:-}"
       ASKCHARTS_TRUST_PROXY: "${ASKCHARTS_TRUST_PROXY:-}"
     volumes:
       - askcharts-data:/data

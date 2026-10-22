@@ -11,7 +11,6 @@ import { createGateway, APP_CSP } from "../server.js";
 
 let upstream, gateway, base, origin, cookie, upPort;
 const seen = [];
-const mails = [];
 // Stands in for the passkey ceremony at /step-up/verify: the user id the check proves, or null to fail.
 let verifyAs = null;
 const fakeVerify = async () => {
@@ -53,11 +52,10 @@ before(async () => {
     {
       host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`,
       origin: "http://localhost:0", rpID: "localhost", email: "You@Example.com",
-      sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log",
-      // as behind a Cloudflare tunnel; the link gap has its own test below
-      trustProxy: "cloudflare", linkGapMs: 0,
+      sessionDays: 7, linkMinutes: 15, dataDir,
+      trustProxy: "cloudflare", // as behind a Cloudflare tunnel
     },
-    { sendLink: async (link) => { mails.push(link); }, verifyPasskey: fakeVerify },
+    { verifyPasskey: fakeVerify },
   );
   const port = await listen(gateway);
   base = `http://127.0.0.1:${port}`;
@@ -111,7 +109,7 @@ test("a signed-in visit to /login goes straight to the terminal", async () => {
 });
 
 test("writes from another origin are blocked, signed in or not", async () => {
-  const r1 = await post("/auth/link", { email: "you@example.com" }, { Origin: "https://evil.example" });
+  const r1 = await post("/auth/login/options", { email: "you@example.com" }, { Origin: "https://evil.example" });
   assert.equal(r1.status, 403);
   const before = seen.length;
   const r2 = await fetch(base + "/api/alerts", { method: "POST", headers: { Cookie: cookie, Origin: "https://evil.example", "x-qt": "1" }, body: "{}" });
@@ -233,20 +231,21 @@ test("event streams pass through without waiting for the end", async () => {
   ac.abort();
 });
 
-test("asking for a link answers the same for any address and only mails the account", async () => {
-  const r1 = await post("/auth/link", { email: "someone@else.com" });
-  const r2 = await post("/auth/link", { email: "  YOU@example.com " });
-  assert.equal(r1.status, 200);
-  assert.equal(r2.status, 200);
-  assert.deepEqual(await r1.json(), await r2.json());
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(mails.length, 1);
-  assert.equal(mails[0].to, "you@example.com");
-  assert.match(mails[0].url, /^http:\/\/localhost:0\/link\/[A-Za-z0-9_-]{43}$/);
+test("there's no route that emails a link; links come from the server (link.mjs), for the account only", async () => {
+  const before = seen.length;
+  const r = await post("/auth/link", { email: "you@example.com" });
+  assert.equal(r.status, 404);
+  assert.equal(seen.length, before);
+  assert.equal(gateway.auth.createLink("someone@else.com"), null);
+  const link = gateway.auth.createLink("  YOU@example.com ");
+  assert.equal(link.to, "you@example.com");
+  assert.match(link.url, /^http:\/\/localhost:0\/link\/[A-Za-z0-9_-]{43}$/);
+  linkToken = link.url.split("/link/")[1];
 });
 
+let linkToken;
 test("a link opens the page without being used up, and a bad one is refused", async () => {
-  const token = mails[0].url.split("/link/")[1];
+  const token = linkToken;
   assert.equal((await fetch(base + "/link/" + token)).status, 200);
   const ok = await post("/auth/enrol/options", { token });
   assert.equal(ok.status, 200);
@@ -289,23 +288,6 @@ test("/session names the account to a signed-in page only, and never reaches the
   assert.deepEqual(await r.json(), { email: "you@example.com" });
   assert.equal(r.headers.get("cache-control"), "no-store");
   assert.equal(seen.length, before);
-});
-
-test("junk addresses from many places don't use up the account's links", async () => {
-  const sent = mails.length;
-  for (let i = 0; i < 12; i++) {
-    const r = await post("/auth/link", { email: `junk${i}@else.com` }, { "CF-Connecting-IP": `203.0.113.${i}` });
-    assert.equal(r.status, 200);
-  }
-  await post("/auth/link", { email: "you@example.com" }, { "CF-Connecting-IP": "198.51.100.7" });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(mails.length, sent + 1);
-});
-
-test("asking for too many links from one place is limited", async () => {
-  let last;
-  for (let i = 0; i < 8; i++) last = await post("/auth/link", { email: "someone@else.com" });
-  assert.equal(last.status, 429);
 });
 
 // ---------- fresh passkey check before code-running writes ----------
@@ -389,8 +371,8 @@ test("the passkey check needs a session, only takes POST, and is never sent to t
 test("a grant runs out after its time", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-test-"));
   const quick = createGateway(
-    { host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log", stepUpMs: 50 },
-    { sendLink: async () => {}, verifyPasskey: async () => ({ userId: quick.auth.accountId }) },
+    { host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, stepUpMs: 50 },
+    { verifyPasskey: async () => ({ userId: quick.auth.accountId }) },
   );
   const qbase = `http://127.0.0.1:${await listen(quick)}`;
   const qcookie = `qt_session=${quick.auth.createSession(quick.auth.accountId).id}`;
@@ -406,11 +388,11 @@ test("a grant runs out after its time", async () => {
 
 // ---------- who's asking: TRUST_PROXY ----------
 // A second gateway with its own settings, for the tests that change them.
-async function extraGateway(over = {}, sendLink = async () => {}) {
+async function extraGateway(over = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-test-"));
   const gw = createGateway(
-    { host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log", ...over },
-    { sendLink, verifyPasskey: fakeVerify },
+    { host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, ...over },
+    { verifyPasskey: fakeVerify },
   );
   const url = `http://127.0.0.1:${await listen(gw)}`;
   return { url, close: () => { gw.closeAllConnections(); gw.close(); } };
@@ -455,20 +437,7 @@ test("behind Caddy or nginx, only the address the proxy added (the last one) cou
 test("a misspelled TRUST_PROXY stops the gateway from starting", () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-test-"));
   assert.throws(
-    () => createGateway({ host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log", trustProxy: "cloudfare" }),
+    () => createGateway({ host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, trustProxy: "cloudfare" }),
     /TRUST_PROXY/,
   );
-});
-
-test("the account gets at most one link email every 10 minutes, whoever asks", async () => {
-  const sent = [];
-  const gw = await extraGateway({ trustProxy: "cloudflare" }, async (link) => { sent.push(link); });
-  try {
-    for (let i = 0; i < 4; i++) {
-      const r = await fetch(gw.url + "/auth/link", { method: "POST", headers: { "Content-Type": "application/json", Origin: origin, "CF-Connecting-IP": `203.0.113.${i}` }, body: JSON.stringify({ email: "you@example.com" }) });
-      assert.equal(r.status, 200);
-    }
-    await new Promise((r) => setTimeout(r, 20));
-    assert.equal(sent.length, 1);
-  } finally { gw.close(); }
 });

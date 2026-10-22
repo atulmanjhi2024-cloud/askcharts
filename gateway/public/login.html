@@ -22,7 +22,7 @@
           <svg viewBox="0 0 64 64" width="26" height="26" aria-hidden="true"><defs><linearGradient id="acMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c4dff"/><stop offset="1" stop-color="#2962ff"/></linearGradient></defs><path d="M14 6H50A10 10 0 0 1 60 16V40A10 10 0 0 1 50 50H27L15 60V50H14A10 10 0 0 1 4 40V16A10 10 0 0 1 14 6Z" fill="none" stroke="url(#acMark)" stroke-width="3.5" stroke-linejoin="round"/><rect x="17.1" y="16.35" width="2.8" height="24.299999999999997" rx="1.4" fill="#f23645"/><rect x="14.2" y="20.8" width="8.6" height="14.4" rx="1.6" fill="#f23645"/><rect x="32.1" y="12.45" width="2.8" height="26.099999999999998" rx="1.4" fill="#089981"/><rect x="29.2" y="15.95" width="8.6" height="17.1" rx="1.6" fill="#089981"/><path fill="url(#acMark)" d="M48.6 11.099999999999998Q50.06 16.939999999999998 55.9 18.4Q50.06 19.86 48.6 25.7Q47.14 19.86 41.300000000000004 18.4Q47.14 16.939999999999998 48.6 11.099999999999998Z"/></svg>
           <h1 id="heading">Sign in</h1>
         </div>
-        <span class="tag" id="site"></span>
+        <span class="tag">Trade wisely</span>
       </div>
 
       <!-- Email first, then the passkey -->
@@ -33,7 +33,6 @@
           <button class="btn btn-primary" id="go" type="submit">Continue with passkey</button>
         </form>
         <p class="msg bad" id="fail" hidden></p>
-        <button class="link" id="send-link" type="button">New device? Email me a link</button>
       </div>
 
       <!-- Waiting on the passkey prompt -->
@@ -42,13 +41,7 @@
         <button class="btn btn-primary" type="button" disabled><span class="spin" aria-hidden="true"></span>Waiting for passkey</button>
       </div>
 
-      <!-- Link asked for (same answer for any address) -->
-      <div class="view" data-view="sent" data-title="Check your inbox" hidden>
-        <p class="lede">If that address can sign in here, a link is on its way. It works once, for 15 minutes.</p>
-        <button class="btn btn-quiet" id="back" type="button">Back</button>
-      </div>
-
-      <!-- Opened from the emailed link -->
+      <!-- Opened from a one-time link (node gateway/link.mjs on the server makes one) -->
       <div class="view" data-view="enrol" data-title="Add this device" hidden>
         <p class="lede">Create a passkey on this device. Next time you'll sign in with one tap.</p>
         <button class="btn btn-primary" id="create" type="button">Create passkey</button>
@@ -58,7 +51,7 @@
 
       <!-- The link is no good -->
       <div class="view" data-view="dead" data-title="Link expired" hidden>
-        <p class="lede">This link has expired or was already used. Ask for a new one from the sign-in page.</p>
+        <p class="lede">This link has expired or was already used. Make a new one on the server with node gateway/link.mjs.</p>
         <a class="btn btn-quiet" href="/login">Back to sign in</a>
       </div>
 

@@ -1,6 +1,6 @@
 # AskCharts <img src="app/public/icons/askcharts-192.png" alt="" width="36" height="36">
 
-Charts, backtests and an AI that works on the chart for you.
+Charts, backtests and an AI that works on the chart for you. Watch the demo at [askcharts.pro](https://askcharts.pro).
 
 AskCharts is a charting platform that runs on your own computer or your own server. It has what you'd expect from
 a trading platform: charts, indicators, drawing tools, alerts, a screener, a strategy tester and bar replay. What
@@ -141,7 +141,8 @@ community scripts, a detailed strategy report, years of stored market history, X
 for servers.
 
 The charts are drawn with TradingView's [Lightweight Charts](https://github.com/tradingview/lightweight-charts)
-(Apache 2.0). AskCharts isn't affiliated with TradingView.
+(Apache 2.0). AskCharts isn't affiliated with TradingView. TradingView and Pine Script are trademarks of
+TradingView, Inc.
 
 ## Licence and contributing
 

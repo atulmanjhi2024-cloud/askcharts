@@ -570,14 +570,14 @@ export function openChartSettings(app, chartTypes, start) {
       const lw = window.LightweightCharts?.version?.() || "";
       const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
       return `<div class="cs-sec">ABOUT</div><div class="ab-wrap">
-        <div class="ab-head"><svg viewBox="1 2 62 62" width="40" height="40" aria-hidden="true" style="width:40px;height:40px">${ABOUT_MARK}</svg><div><div class="ab-name">AskCharts</div><div class="ab-sub">Charts, backtests and an AI that works on the chart for you.</div></div></div>
+        <div class="ab-head"><div class="ab-name">AskCharts<svg class="ab-mark" viewBox="2.25 4.25 59.5 57.5" width="23" height="22" aria-hidden="true" style="width:23px;height:22px">${ABOUT_MARK}</svg></div><div class="ab-sub">askcharts.pro. Charts, backtests and an AI that works on the chart for you.</div></div>
         <div class="ab-h">Charts</div>
         <p>TradingView Lightweight Charts&trade;${lw ? ` v${esc(lw)}` : ""}<br>Copyright (c) 2026 TradingView, Inc. Licensed under the Apache License 2.0.<br>${link("https://www.tradingview.com/", "tradingview.com")}</p>
         <div class="ab-h">Built on</div>
         <p>Quant Terminal, copyright (c) 2026 Lewis Jackson, MIT licence.</p>
         <div class="ab-h">Market data</div>
         <p>From public sources (Binance, Coinbase, Kraken, Nasdaq, Yahoo Finance and Forex Factory), each under its own terms, and from any data keys you add. For your own analysis. Nothing here is financial advice.</p>
-        <p class="ab-small">AskCharts is an independent project, not affiliated with or endorsed by TradingView, Inc. TradingView is a trademark of TradingView, Inc.</p>
+        <p class="ab-small">AskCharts is an independent project, not affiliated with or endorsed by TradingView, Inc. TradingView and Pine Script are trademarks of TradingView, Inc.</p>
       </div>`;
     },
     events() {

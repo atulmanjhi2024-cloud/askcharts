@@ -1,6 +1,7 @@
-// A one-time sign-in link for the account (ALLOWED_EMAIL), printed here instead of emailed: the way to
-// add the first passkey on a server with no mail set up, or a new device later. It works once and
-// expires like an emailed one. Run it where the gateway runs, with the same settings:
+// A one-time sign-in link for the account (ALLOWED_EMAIL): the way to add a passkey on a new device,
+// the first one included. It works once and expires after LINK_MINUTES (15). Anyone who opens it in
+// that time can add a passkey, so only open it on your own device. Run it where the gateway runs,
+// with the same settings:
 //   node gateway/link.mjs                                     (on the server)
 //   docker compose exec askcharts node gateway/link.mjs       (in Docker)
 import path from "node:path";

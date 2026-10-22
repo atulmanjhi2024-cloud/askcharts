@@ -17,7 +17,6 @@
 //   ASKCHARTS_GATEWAY=1  run the sign-in gateway in front of the app (Docker sets it), with
 //     ASKCHARTS_ORIGIN   the address people open, like https://charts.example.com
 //     ASKCHARTS_EMAIL    the one account that can sign in
-//     MAIL_MODE          log (sign-in links go to the log; the default) or resend (RESEND_API_KEY, MAIL_FROM)
 //     ASKCHARTS_TRUST_PROXY   what's in front: cloudflare, forwarded (Caddy, nginx), or empty for nothing
 //     ASKCHARTS_GATEWAY_PORT, ASKCHARTS_GATEWAY_HOST   where the gateway listens (3778, 0.0.0.0)
 import { spawn } from "node:child_process";
@@ -163,7 +162,6 @@ if (process.env.ASKCHARTS_GATEWAY === "1") {
         ORIGIN: origin,
         RP_ID: rpID,
         ALLOWED_EMAIL: process.env.ASKCHARTS_EMAIL || "",
-        MAIL_MODE: process.env.MAIL_MODE || "log",
         TRUST_PROXY: process.env.ASKCHARTS_TRUST_PROXY || "",
         DATA_DIR: dirs.gateway,
       },

@@ -12,9 +12,11 @@ The Docker install runs it for you (`run.mjs` starts it when `ASKCHARTS_GATEWAY=
 
 - **One account,** the email in `ASKCHARTS_EMAIL`. There's no sign up.
 - **Sign in:** type the email, press Continue with passkey, confirm with your device.
-- **Your first passkey, or a new device:** a one-time link. On the sign-in page, "New device? Email me a
-  link" sends it (or, with `MAIL_MODE=log`, writes it to the log). Or make one on the server:
-  `docker compose exec askcharts node gateway/link.mjs`. A link works once and expires in 15 minutes.
+- **Your first passkey, or a new device:** a one-time link you make on the server:
+  `docker compose exec askcharts node gateway/link.mjs`. It works once and expires in 15 minutes, and
+  anyone who opens it in that time can add a passkey, so open it only on your own device. The sign-in
+  page has no way to ask for one and the gateway sends no email, so a stranger can't trigger anything.
+  Passkeys that sync (iCloud Keychain, Google Password Manager) reach your other devices without a link.
 - **Sessions** last 7 days, in a cookie the app never sees. Sign out from the AskCharts logo.
 
 ## What it enforces
@@ -22,7 +24,7 @@ The Docker install runs it for you (`run.mjs` starts it when `ASKCHARTS_GATEWAY=
 - Only the sign-in page and its own routes answer without a session.
 - Every write must come from your own address (`ASKCHARTS_ORIGIN`).
 - Saving or deleting a JavaScript indicator, or importing a signal, asks for your passkey again.
-- Rate limits on sign in and on links, so guessing and mail spam are slow.
+- Rate limits on sign in, so guessing is slow.
 - The app's pages get a strict content security policy: scripts only from your own address.
 
 ## Settings
@@ -32,10 +34,8 @@ The Docker install runs it for you (`run.mjs` starts it when `ASKCHARTS_GATEWAY=
 `ASKCHARTS_TRUST_PROXY`. That one tells the gateway what's in front of it, so the rate limits count each
 visitor: `cloudflare` for a Cloudflare tunnel, `forwarded` for Caddy, nginx and the like, empty when
 nothing is in front. Anyone can send the headers these read, so set it only to what you really use. A
-value it doesn't know stops the gateway from starting. To email links, set `MAIL_MODE=resend`,
-`RESEND_API_KEY` (a sending-only key from resend.com) and `MAIL_FROM` (like
-`AskCharts <sign-in@your-domain>`).
+value it doesn't know stops the gateway from starting.
 
 ## Tests
 
-`npm test` here: 30 tests against a stand-in app. They need this folder's two packages (`npm ci`).
+`npm test` here: 32 tests against a stand-in app. They need this folder's two packages (`npm ci`).

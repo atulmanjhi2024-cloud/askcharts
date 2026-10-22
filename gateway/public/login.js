@@ -1,8 +1,6 @@
 // AskCharts sign-in page: the passkey flows, then the decorative chart behind them.
 (() => {
   const $ = (id) => document.getElementById(id);
-  // the site's own address in the corner, so you can see where you're signing in
-  $("site").textContent = location.host;
   const W = window.SimpleWebAuthnBrowser;
 
   // ---------- screens ----------
@@ -60,22 +58,7 @@
     }
   });
 
-  // New device: email a one-time link.
-  $("send-link").addEventListener("click", async () => {
-    const addr = email.value.trim();
-    if (!addr) { say($("fail"), "Enter your email first."); email.focus(); return; }
-    remember(addr);
-    say($("fail"), "");
-    try {
-      await post("/auth/link", { email: addr });
-      show("sent");
-    } catch (err) {
-      say($("fail"), explain(err));
-    }
-  });
-  $("back").addEventListener("click", () => show("email"));
-
-  // From the emailed link: create a passkey on this device.
+  // From a one-time link (node gateway/link.mjs): create a passkey on this device.
   $("create").addEventListener("click", async () => {
     say($("enrol-fail"), "");
     $("create").disabled = true;
