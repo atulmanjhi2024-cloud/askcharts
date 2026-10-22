@@ -44,11 +44,12 @@ const int = (v, name) => {
   return n;
 };
 
-// The collector's own word (connected, how far behind, what's left to fill in), when it has written one.
+// The collector's own word (connected, how far behind, what's left to fill in, how many days it keeps),
+// when it has written one.
 function collector() {
   try {
     const s = JSON.parse(fs.readFileSync(STATUS, "utf8"));
-    return { connected: !!s.connected, behind: s.behind ?? null, toFill: s.toFill ?? null, updated: s.updated || null };
+    return { connected: !!s.connected, behind: s.behind ?? null, toFill: s.toFill ?? null, updated: s.updated || null, keepDays: s.settings?.keepDays ?? null };
   } catch {
     return null;
   }

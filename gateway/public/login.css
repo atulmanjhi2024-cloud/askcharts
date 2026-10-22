@@ -8,9 +8,9 @@
   --grid: rgba(42, 46, 57, 0.55);
   --text: #d1d4dc;
   --muted: #787b86;
-  --accent: #2962ff;
+  --accent: #7c4dff; /* AskCharts purple, from the mark */
   --accent-ink: #ffffff;
-  --accent-soft: rgba(41, 98, 255, 0.2);
+  --accent-soft: rgba(124, 77, 255, 0.2);
   --gold: #d4a514;
   --up: #089981;
   --down: #f23645;

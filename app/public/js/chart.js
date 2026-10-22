@@ -1,6 +1,6 @@
 // One chart: candles + volume + any number of indicators, drawings, compare symbols, replay and live data.
 import { api, fmtPrice, fmtPct, fmtNum, esc, ticker, exchange } from "./api.js";
-import { BY_ID, compute, periodKey } from "../lib/indicators.js";
+import { BY_ID, compute, periodKey, defaults } from "../lib/indicators.js";
 import {
   parseTf,
   isIntraday,
@@ -18,6 +18,7 @@ import { indicatorFavs } from "./indicatorpicker.js";
 import { visibleOn } from "./indsettings.js";
 import { rangeBounds } from "./strategyreport.js";
 import { BandFill } from "./indfill.js";
+import { EmptyNote } from "./indempty.js";
 import { LINE_STYLE, colorOf, zoneOf, tzOffset, fromZone, fmtDate, fmtClock, precisionFormatter, minMoveOf, quoteCurrency } from "./chartsettings.js";
 import { ChartExtras, marketState } from "./chartextras.js";
 import { StyleSeries, CUSTOM_TYPES, TYPE_GROUPS, UNAVAILABLE } from "./charttypes.js";
@@ -86,6 +87,16 @@ export const newUid = () =>
 // the point it starts from, so hiding a gap means making the point before it transparent and
 // parking the gap's points (invisibly) at the next real value.
 const CLEAR = "rgba(0,0,0,0)";
+// A line joined across bars with no value (XRPL On chain on a seconds chart, where many bars hold no
+// ledger): those bars get no point at all, so the line runs straight from one value to the next.
+// lastColor: the colour of the segment into the newest bar while that bar is still adding up.
+function bridgedLineData(vals, timeAt, n, lastColor) {
+  const out = [];
+  for (let i = 0; i < Math.min(vals.length, n); i++) if (Number.isFinite(vals[i])) out.push({ time: timeAt(i), value: vals[i] });
+  if (lastColor && out.length > 1 && out.at(-1).time === timeAt(n - 1)) out.at(-2).color = lastColor;
+  return out;
+}
+
 function lineData(vals, breaks, timeAt, n, colors) {
   const out = [];
   const next = new Array(vals.length);
@@ -1269,6 +1280,56 @@ export class ChartPane {
     return c;
   }
 
+  // When the store's history starts, in the chart's zone and clock ("19 Oct '26 4:00 AM"), on a daily
+  // chart too (toChart keeps those in UTC)
+  onchainSince(c) {
+    if (!c?.first) return "";
+    const t = c.first + tzOffset(this.zone, c.first);
+    return `${fmtDate(t, this.cs.dateFormat)} ${fmtClock(t, this.cs.hours === "12")}`;
+  }
+
+  // On the bars before the store's first ledger, what the legend and the pane say. Not where a seconds
+  // chart's fetch stopped short of the store's start (20,000 buckets at most): the store has data there.
+  onchainBefore(def) {
+    const c = this.onchain?.[def.onchain];
+    return c?.first && c.from <= c.first ? `No ${def.onchain.toUpperCase()} data before ${this.onchainSince(c)}` : "";
+  }
+
+  onchainEmptyNote(def, res, bars) {
+    const head = this.onchainBefore(def);
+    if (!head || res.error || res.pending) return null;
+    const starts = def.outputs.map((o) => res[o.key]?.findIndex(Number.isFinite) ?? -1).filter((k) => k >= 0);
+    const first = starts.length ? Math.min(...starts) : 0;
+    if (first < 1 || first >= bars.length) return null;
+    const keep = this.onchain[def.onchain].collector?.keepDays;
+    return new EmptyNote(this, first, [head, `The history grows by a day each day${keep ? `, up to ${keep} days` : ""}`]);
+  }
+
+  // The "?" on this chart's data: where its history starts, how long it's kept, and how the collector is doing
+  onchainLive(def) {
+    const c = this.onchain?.[def.onchain];
+    if (!c) return [];
+    if (!c.first) return [c.reason || "No XRP Ledger data yet."];
+    const keep = c.collector?.keepDays,
+      st = c.collector;
+    const out = [`The history here starts ${this.onchainSince(c)}, and the pane is empty before that. It grows by a day each day${keep ? `, up to ${keep} days` : ""}.`];
+    if (st) {
+      const quiet = st.updated ? Math.floor((Date.now() - Date.parse(st.updated)) / 60000) : 0;
+      out.push(
+        !st.connected
+          ? "The collector isn't connected right now. New bars fill in once it is."
+          : quiet >= 2
+            ? `The collector last reported ${quiet} minutes ago. New bars fill in once it's back.`
+            : st.behind > 5
+              ? `The collector is ${st.behind.toLocaleString("en-US")} ledgers behind and catching up.`
+              : st.toFill > 5
+                ? `The collector is up to date and still filling in ${st.toFill.toLocaleString("en-US")} older ledgers.`
+                : "The collector is up to date.",
+      );
+    }
+    return out;
+  }
+
   async loadOnchain(chain, c, to, full = false) {
     c.loading = true;
     // A new ledger in a rounded close window (10 seconds, 30 at most) moves the window's earlier ledgers
@@ -1383,6 +1444,9 @@ export class ChartPane {
       (this.paneUids[pane] ||= []).push(ind.uid);
       const list = [];
       const fmt = this.indFormat(def, ind);
+      // a count still adding up (XRPL Activity's Count): the newest bar's segment is faded until it closes
+      const tfSec = parseTf(this.cfg.tf).seconds;
+      const forming = def.partialNewest?.({ ...defaults(def.id), ...ind.params }) && Date.now() / 1000 < bars[n - 1].time + tfSec;
       for (const out of outs) {
         const color = ind.colors?.[out.key] || out.color;
         // Settings, Scales and lines: "Indicators and financials" labels (name and/or value)
@@ -1407,8 +1471,20 @@ export class ChartPane {
         const vals = res[out.key];
         if (pane) warm = Math.max(warm, vals.slice(0, n).findIndex(Number.isFinite));
         const colorsOf = res.colorsOf?.[out.key];
-        s.setData(out.kind === "histogram" ? histData(vals, colorsOf || res.colors, timeAt, n) : lineData(vals, res.breaks, timeAt, n, colorsOf));
+        s.setData(
+          out.kind === "histogram"
+            ? histData(vals, colorsOf || res.colors, timeAt, n)
+            : def.bridgeGaps && (type === "line" || type === "step")
+              ? bridgedLineData(vals, timeAt, n, forming && fade(color, 0.3))
+              : lineData(vals, res.breaks, timeAt, n, colorsOf),
+        );
         list.push(s);
+      }
+      // XRPL On chain: the bars before the store's first ledger are empty, and the pane says why
+      if (def.onchain && parentPane === undefined) {
+        const note = this.onchainEmptyNote(def, res, bars);
+        const host = list.find((x) => x.options().visible) || list[0];
+        if (note && host) host.attachPrimitive(note);
       }
       // TradingView's shaded band between the levels (RSI's 70 to 30), behind the lines
       if (def.band && parentPane === undefined && list[0]) list[0].attachPrimitive(new BandFill(this, def.band, res[outs[0].key]));
@@ -1648,11 +1724,15 @@ export class ChartPane {
       // newest often among them. Off the crosshair the legend shows the newest bar with ledgers (not
       // values that come and go); on a bar with none, inside the data, it says so.
       let at = i,
-        none = false;
+        none = false,
+        before = "";
       if (def.onchain && !res.error && !res.pending) {
         const has = (j) => def.outputs.some((o) => Number.isFinite(res[o.key]?.[j]));
         if (index == null) while (at > 0 && !has(at)) at--;
-        else if (!has(i)) none = def.outputs.some((o) => res[o.key]?.slice(0, i).some(Number.isFinite));
+        else if (!has(i)) {
+          none = def.outputs.some((o) => res[o.key]?.slice(0, i).some(Number.isFinite));
+          if (!none) before = this.onchainBefore(def);
+        }
       }
       const vals = res.error
         ? `<span class="down">${esc(res.error)}</span>`
@@ -1660,6 +1740,8 @@ export class ChartPane {
           ? '<span class="muted">loading…</span>'
           : none
             ? '<span class="muted">No ledger closed in this bar</span>'
+            : before
+              ? `<span class="muted">${esc(before)}</span>`
             : def.outputs
               .map((o) => {
                 const v = res[o.key]?.[at];
@@ -1670,18 +1752,22 @@ export class ChartPane {
                 const t = o.integer ? v.toLocaleString("en-US", { maximumFractionDigits: 0 }) : fmtI(v);
                 return def.labelValues ? `<span style="color:${c}">${esc(o.label)} ${t}</span>` : `<span style="color:${c}">${t}</span>`;
               })
-              .join(" ");
+              // named values get a faint bar between them ("Money 3,318 | Markets 11,209")
+              .filter((s) => !def.labelValues || s)
+              .join(def.labelValues ? '<span class="lg-sep">|</span>' : " ");
       const short =
         /\(([^)]+)\)$/.exec(def.name)?.[1].split(" / ")[0] || def.name;
       // Settings, Status line: indicator titles, their inputs, values and the row background
       const ist = ind.style || {};
       const title = cs.indTitles ? `<span class="name">${esc(short)}${cs.indInputs && ist.statusInputs !== false && params ? ` ${esc(params)}` : ""}</span>` : "";
       const shownVals = (cs.indValues && ist.statusValues !== false) || res.error ? `<span class="vals">${vals}</span>` : "";
+      // an indicator that explains itself (XRPL Activity) gets a "?" after its name
+      const info = def.info ? `<button class="ind-info" data-act="info" aria-label="What this shows and how it counts">?</button>` : "";
       // TradingView's buttons: hide, settings, source code (when there's source to show), remove, more
       const source = this.sourceOf(ind) ? `<button data-act="source" title="Source code">${ICON.braces}</button>` : "";
       const acts = `<button data-act="hide" title="${ind.hidden ? "Show" : "Hide"}">${ind.hidden ? ICON.eyeOff : ICON.eye}</button><button data-act="settings" title="Settings">${ICON.hexGear}</button>${source}<button data-act="remove" title="Remove">${ICON.trash}</button><button data-act="more" title="More">${ICON.more}</button>`;
       const off = !visibleOn(ind, this.cfg.tf);
-      const rowHtml = `<div class="row ind${cs.legendBg ? " bg" : ""}${this.selectedInd === ind.uid ? " sel" : ""}" data-uid="${ind.uid}" style="${ind.hidden || off ? "opacity:.45" : ""}"${off ? ' title="Not shown on this interval (Settings, Visibility)"' : ""}>${title}${shownVals}<span class="acts">${acts}</span></div>`;
+      const rowHtml = `<div class="row ind${cs.legendBg ? " bg" : ""}${this.selectedInd === ind.uid ? " sel" : ""}" data-uid="${ind.uid}" style="${ind.hidden || off ? "opacity:.45" : ""}"${off ? ' title="Not shown on this interval (Settings, Visibility)"' : ""}>${title}${info}${shownVals}<span class="acts">${acts}</span></div>`;
       const k = !ind.hidden && !res.error && !res.pending ? paneOf[ind.uid] : undefined;
       if (k) paneRows[k] = (paneRows[k] || "") + rowHtml;
       else rest += rowHtml;
@@ -1705,6 +1791,8 @@ export class ChartPane {
         el.className = "legend lg-pane";
         el.dataset.pane = k;
         el.onclick = (e) => this.onLegendClick(e);
+        el.onpointerover = (e) => this.onInfoHover(e, true);
+        el.onpointerout = (e) => this.onInfoHover(e, false);
         this.el.appendChild(el);
       }
       el.style.setProperty("--lg-bg", `${cs.legendBg ? cs.legendBgOpacity : 0}%`);
@@ -1712,6 +1800,8 @@ export class ChartPane {
     }
     this.placePaneLegends();
     this.legendEl.onclick = (e) => this.onLegendClick(e);
+    this.legendEl.onpointerover = (e) => this.onInfoHover(e, true);
+    this.legendEl.onpointerout = (e) => this.onInfoHover(e, false);
     this.app.panels?.onLegend?.(this, index);
   }
 
@@ -1763,6 +1853,7 @@ export class ChartPane {
     const uid = btn.closest("[data-uid]")?.dataset.uid;
     const ind = this.cfg.indicators.find((x) => x.uid === uid);
     if (!ind) return;
+    if (act === "info") return this.indicatorInfo(btn, ind);
     if (this.app.settings.lockIndicators && ["remove", "hide", "settings"].includes(act))
       return this.app.toast("Indicators are locked. Unlock them from the lock button on the left.");
     if (act === "source") return this.openSource(ind);
@@ -1783,6 +1874,59 @@ export class ChartPane {
       this.app.panels.showSide("pine");
       this.app.pineEditor.openScript(src.pine);
     } else if (src?.custom) this.app.panels.editCustom(src.custom);
+  }
+
+  // The "?" beside an indicator that explains itself: what it shows and how it counts, each kind in the
+  // colour of its line. The popover closes on a click anywhere else.
+  // The "?" opens on hover with a mouse (a tap opens it as a click does). It closes once the mouse has
+  // left both the "?" and the explanation, unless a click pinned it open; a click elsewhere closes it.
+  onInfoHover(e, over) {
+    const q = e.target.closest?.(".ind-info");
+    if (!q || e.pointerType !== "mouse" || q.contains(e.relatedTarget)) return;
+    clearTimeout(this.infoTimer);
+    if (!over) return this.infoHoverEnd();
+    const uid = q.closest("[data-uid]")?.dataset.uid;
+    if (this.infoPop?.uid === uid && this.app.drawToolbar.pop === this.infoPop.pop) return;
+    this.infoTimer = setTimeout(() => {
+      // the legend may have been redrawn meanwhile: the "?" now on screen
+      const btn = q.isConnected ? q : this.el.querySelector(`.row.ind[data-uid="${uid}"] .ind-info`);
+      const ind = this.cfg.indicators.find((x) => x.uid === uid);
+      if (btn && ind && btn.matches(":hover")) this.indicatorInfo(btn, ind, true);
+    }, 150);
+  }
+
+  infoHoverEnd() {
+    clearTimeout(this.infoTimer);
+    this.infoTimer = setTimeout(() => {
+      const s = this.infoPop,
+        tb = this.app.drawToolbar;
+      if (s && !s.pinned && tb.pop === s.pop && !s.pop.matches(":hover")) tb.closePopover();
+    }, 250);
+  }
+
+  indicatorInfo(btn, ind, hover = false) {
+    const def = BY_ID[ind.id],
+      info = def?.info,
+      tb = this.app.drawToolbar;
+    if (!info) return;
+    clearTimeout(this.infoTimer);
+    tb.closePopover();
+    const colorOf = (k) => ind.colors?.[k] || def.outputs.find((o) => o.key === k)?.color || "inherit";
+    const labelOf = (k) => def.outputs.find((o) => o.key === k)?.label || k;
+    const rows = info.rows.map(([k, text]) => `<dt style="color:${colorOf(k)}">${esc(labelOf(k))}</dt><dd>${esc(text)}</dd>`).join("");
+    // XRPL On chain: this chart's own history and the collector's state close the last section
+    const last = info.sections.length - 1;
+    const body = info.sections
+      .map(([head, ps], k) => `<div class="ii-head">${esc(head)}</div>${[...ps, ...(k === last && def.onchain ? this.onchainLive(def) : [])].map((t) => `<p class="ii-note">${esc(t)}</p>`).join("")}`)
+      .join("");
+    // never over the "?" itself (it would take the click meant for the "?"): no taller than the room
+    // above or below it, whichever is bigger; the rest scrolls
+    const r = btn.getBoundingClientRect(),
+      room = Math.max(160, Math.floor(Math.max(r.top, innerHeight - r.bottom) - 40));
+    const pop = tb.openPopover(btn, `<div class="ind-info-pop" style="max-height:${room}px"><div class="ii-title">${esc(info.title)}</div><p>${esc(info.lead)}</p><dl>${rows}</dl>${body}</div>`, "indinfo");
+    this.infoPop = { uid: ind.uid, pop, pinned: !hover };
+    pop.addEventListener("pointerenter", () => clearTimeout(this.infoTimer));
+    pop.addEventListener("pointerleave", (e) => e.pointerType === "mouse" && this.infoHoverEnd());
   }
 
   // More (the three dots): the rest of TradingView's indicator menu that applies here.

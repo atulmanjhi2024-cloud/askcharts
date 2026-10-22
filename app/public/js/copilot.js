@@ -4,13 +4,15 @@
 // comes back to the browser.
 import { api, esc, ticker } from "./api.js";
 import { BY_ID } from "../lib/indicators.js";
+import { PRODUCTS } from "./products.js";
 // agent.js (the AI's tools) loads on the first question: it imports the chart, which only runs in a
 // browser, and the server's guide imports this file through Settings.
 const loadAgent = () => import("./agent.js");
 
 const $ = (s, el = document) => el.querySelector(s);
 const STORE = "qt-copilot-chat";
-const SPARK = '<svg viewBox="0 0 28 28"><path d="M14 4c.9 5.3 4.7 9.1 10 10-5.3.9-9.1 4.7-10 10-.9-5.3-4.7-9.1-10-10 5.3-.9 9.1-4.7 10-10z"/></svg>';
+// The same robot as AskCharts AI's button on the right toolbar, in a box wide enough for its ears
+const ROBOT = `<svg viewBox="-1.5 0 31 28">${PRODUCTS.find((p) => p.id === "copilot").icon}</svg>`;
 const I = {
   newChat: '<svg viewBox="0 0 24 24"><path d="M13 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V11"/><path d="M17.5 4.5l2 2L12 14l-2.5.5.5-2.5z"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>',
@@ -209,12 +211,12 @@ export class Copilot {
     const body = !cfg
       ? '<div class="pad hint-text">Loading…</div>'
       : !ready
-        ? `<div class="cp-empty">${SPARK}<div class="cp-hello">AskCharts AI</div><p>Ask anything about AskCharts or the chart on screen, or tell it what to put on the chart. It runs on your own API key.</p><button class="btn cp-cta" data-x="settings">Connect a model</button><p class="cp-small">Settings, AskCharts AI: pick the provider, paste the key, Test, choose a model.</p></div>`
+        ? `<div class="cp-empty">${ROBOT}<div class="cp-hello">AskCharts AI</div><p>Ask anything about AskCharts or the chart on screen, or tell it what to put on the chart. It runs on your own API key.</p><button class="btn cp-cta" data-x="settings">Connect a model</button><p class="cp-small">Settings, AskCharts AI: pick the provider, paste the key, Test, choose a model.</p></div>`
         : this.messages.length
           ? this.messages.map((m, i) => this.bubble(m, i)).join("")
-          : `<div class="cp-empty">${SPARK}<div class="cp-hello">How can I help?</div><p>Ask about the chart, or tell me what to put on it. Every change can be undone.</p><div class="cp-sugg">${SUGGEST.map((s) => `<button data-ask="${esc(s)}">${esc(s)}</button>`).join("")}</div></div>`;
+          : `<div class="cp-empty">${ROBOT}<div class="cp-hello">How can I help?</div><p>Ask about the chart, or tell me what to put on it. Every change can be undone.</p><div class="cp-sugg">${SUGGEST.map((s) => `<button data-ask="${esc(s)}">${esc(s)}</button>`).join("")}</div></div>`;
     el.innerHTML = `<div class="sp-fill cp">
-      <div class="sp-head"><span class="cp-mark">${SPARK}</span><span class="sp-name">AskCharts AI</span><span class="spacer"></span><button class="sp-icon" data-x="new" title="New chat">${I.newChat}</button><button class="sp-icon" data-x="settings" title="AskCharts AI settings">${I.gear}</button></div>
+      <div class="sp-head"><span class="cp-mark">${ROBOT}</span><span class="sp-name">AskCharts AI</span><span class="spacer"></span><button class="sp-icon" data-x="new" title="New chat">${I.newChat}</button><button class="sp-icon" data-x="settings" title="AskCharts AI settings">${I.gear}</button></div>
       <div class="sp-scroll cp-log">${body}</div>
       <div class="cp-foot">
         <div class="cp-box"><textarea rows="1" placeholder="${ready ? "Ask, or tell me what to put on the chart" : "Connect a model in Settings first"}" ${ready ? "" : "disabled"}></textarea><button class="cp-send" data-x="${this.busy ? "stop" : "send"}" title="${this.busy ? "Stop" : "Ask (Enter)"}" ${ready ? "" : "disabled"}>${this.busy ? I.stop : I.send}</button></div>

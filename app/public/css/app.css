@@ -13,8 +13,8 @@
   --border: #2a2e39;
   --text: #d1d4dc;
   --muted: #787b86;
-  --accent: #2962ff;
-  --accent-soft: rgba(41, 98, 255, 0.18);
+  --accent: #7c4dff; /* AskCharts purple, from the mark (it was TradingView's blue, #2962ff) */
+  --accent-soft: rgba(124, 77, 255, 0.18);
   --up: #089981;
   --down: #f23645;
   --hover: #2a2e39;
@@ -39,8 +39,8 @@
   --border: #e0e3eb;
   --text: #131722;
   --muted: #6a6d78;
-  --accent: #2962ff;
-  --accent-soft: rgba(41, 98, 255, 0.12);
+  --accent: #7c4dff;
+  --accent-soft: rgba(124, 77, 255, 0.12);
   --up: #089981;
   --down: #f23645;
   --hover: #eef0f6;
@@ -2334,9 +2334,10 @@ body .pane .chart.dr-point, body .pane .chart.dr-point * { cursor: pointer !impo
 /* ---------- AI Copilot ---------- */
 .cp-root { height: 100%; }
 .cp .sp-head { gap: 2px; }
-.cp-mark svg, .cp-empty > svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
+.cp-mark svg, .cp-empty > svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.cp-mark svg .fill, .cp-empty > svg .fill { fill: currentColor; stroke: none; }
 .cp-mark { display: grid; place-items: center; padding-left: 4px; }
-.cp-mark svg { width: 20px; height: 20px; }
+.cp-mark svg { width: 20px; height: 20px; stroke-width: 1.6; }
 .cp .sp-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .cp-log { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 12px; }
 .cp-empty { margin: auto 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 24px 8px; color: var(--muted); font-size: 13px; }
@@ -2547,8 +2548,8 @@ select.cs-num.ai-in { padding-right: 8px; }
    hover or when picked, 28 by 20 buttons with 18px icons. The text keeps its place; the box reaches
    4px further left. */
 :root,
-[data-theme="dark"] { --lg-ind-text: #b2b5be; --lg-ind-icon: #dbdbdb; --lg-ind-sel: #1848cc; --lg-ind-box: #0f0f0f; }
-[data-theme="light"] { --lg-ind-text: #131722; --lg-ind-icon: #131722; --lg-ind-sel: #2962ff; --lg-ind-box: #f0f3fa; }
+[data-theme="dark"] { --lg-ind-text: #b2b5be; --lg-ind-icon: #dbdbdb; --lg-ind-sel: #5f37d9; --lg-ind-box: #0f0f0f; }
+[data-theme="light"] { --lg-ind-text: #131722; --lg-ind-icon: #131722; --lg-ind-sel: #7c4dff; --lg-ind-box: #f0f3fa; }
 .legend .row.ind { font-size: 13px; line-height: 24px; font-variant-numeric: tabular-nums; border-radius: 4px; padding: 0 2px 0 5px; margin-left: -4px; max-width: calc(100% + 4px); }
 .legend .row.ind .vals:empty { display: none; }
 .legend .row.ind .name { color: var(--lg-ind-text); }
@@ -2722,3 +2723,22 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 /* the deep backtest caution sits over the Performance chart, so its close button gets the click */
 .sr-caution { z-index: 6; }
 .sr-chart { height: 300px; }
+
+/* The legend: a faint bar between named values ("Money 3,318 | Markets 11,209"), and the "?" after an
+   indicator that explains itself (XRPL Activity), with its explanation */
+.legend .lg-sep { color: var(--muted); opacity: 0.55; margin: 0 7px; }
+.legend .ind .ind-info {
+  flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; padding: 0; margin-left: -2px;
+  border: 1px solid currentColor; border-radius: 50%; background: transparent; color: var(--muted);
+  font-family: inherit; font-size: 10px; font-weight: 600; line-height: 1; cursor: pointer; opacity: 0.8;
+}
+.legend .ind .ind-info:hover { color: var(--text); opacity: 1; }
+.ind-info-pop { width: 440px; max-width: calc(100vw - 32px); max-height: calc(100vh - 140px); overflow-y: auto; padding: 4px 6px; font-size: 12.5px; line-height: 1.5; color: var(--text); white-space: normal; }
+.ind-info-pop .ii-title { font-weight: 600; font-size: 13.5px; margin-bottom: 6px; }
+.ind-info-pop p { margin: 0 0 10px; }
+.ind-info-pop .ii-head { font-weight: 600; margin: 14px 0 4px; }
+.ind-info-pop .ii-note { margin-bottom: 6px; }
+.ind-info-pop .ii-note { color: var(--muted); }
+.ind-info-pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 10px; }
+.ind-info-pop dt { font-weight: 600; }
+.ind-info-pop dd { margin: 0; }

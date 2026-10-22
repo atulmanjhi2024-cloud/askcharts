@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.3 (2026-10-22)
+
+AskCharts gets its own colour, and XRPL Activity gets easier to read.
+
+- AskCharts has its own accent colour, the purple from its mark, on buttons, toggles, the BUY box and the
+  sign-in page. Line and drawing colours are unchanged.
+- XRPL Activity draws fine lines in each kind's colour instead of dots, its values in the legend are split
+  by a faint |, and a small ? after its name explains what it counts and how.
+- AskCharts AI's panel shows the same robot as its toolbar button, where it had a spark.
+- XRPL Activity says where its history starts, in the empty part of the pane before it, and fades the
+  newest bar while it's still adding up. Its ? explains the edges of the chart and how the collector is doing.
+- An indicator's ? opens when the mouse is over it, and stays open after a click. On a touch screen a tap opens it.
+
 ## 0.1.2 (2026-10-22)
 
 The sign-in gateway sends no email any more, plus credits, notices and the look of the About page.

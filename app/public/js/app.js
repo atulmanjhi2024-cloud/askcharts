@@ -69,21 +69,21 @@ class CursorFx {
     if (this.mode === "demo") {
       for (const r of this.ripples) {
         const k = (now - r.t) / 600;
-        ctx.strokeStyle = `rgba(41, 98, 255, ${0.6 * (1 - k)})`;
+        ctx.strokeStyle = `rgba(124, 77, 255, ${0.6 * (1 - k)})`;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(r.x, r.y, 18 + 26 * k, 0, Math.PI * 2);
         ctx.stroke();
       }
       if (this.at) {
-        ctx.fillStyle = "rgba(41, 98, 255, 0.22)";
-        ctx.strokeStyle = "rgba(41, 98, 255, 0.75)";
+        ctx.fillStyle = "rgba(124, 77, 255, 0.22)";
+        ctx.strokeStyle = "rgba(124, 77, 255, 0.75)";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(this.at.x, this.at.y, 18, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = "rgba(41, 98, 255, 0.95)";
+        ctx.fillStyle = "rgba(124, 77, 255, 0.95)";
         ctx.beginPath();
         ctx.arc(this.at.x, this.at.y, 3, 0, Math.PI * 2);
         ctx.fill();

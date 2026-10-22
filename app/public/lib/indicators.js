@@ -2524,17 +2524,56 @@ export const INDICATORS = [
     labelValues: true,
     // the legend names every count, and four or more labels on the scale only pile up: off unless asked
     scaleLabels: false,
+    // fine lines, one per kind, joined across bars with no ledger (a seconds chart has many)
+    bridgeGaps: true,
+    // Count's newest bar is still adding up: its segment is faded until the bar closes
+    partialNewest: (p) => p.show === "Count",
+    // the "?" beside its name in the legend; the chart adds this chart's history and the collector's state
+    info: {
+      title: "XRPL Activity",
+      lead: "How many transactions the XRP Ledger handled in each bar, by kind, with a line for each kind. The legend shows the newest bar, or the bar under the crosshair.",
+      rows: [
+        ["money", "Payments, escrows, checks and payment channels"],
+        ["markets", "Offers on the ledger's own exchange, and AMM pools"],
+        ["nfts", "Minting, burning and trading NFTs"],
+        ["accounts", "Trust lines, account settings, keys, tickets and similar"],
+        ["other", "Every other kind (its line is off until turned on in Style)"],
+        ["batch", "Batch wrappers; the transactions inside them count in their own kinds"],
+        ["failed", "Transactions that failed but still paid their fee"],
+        ["total", "Every transaction in those ledgers"],
+        ["ledgers", "How many ledgers closed in the bar"],
+        ["ledger", "The newest of those ledgers"],
+      ],
+      sections: [
+        [
+          "How it counts",
+          [
+            "A ledger closes every 3 to 4 seconds. Each transaction in it counts once, under its kind, and a bar adds up the ledgers that closed in it.",
+            "Money, Markets, NFTs, Accounts and Other count successful transactions only. Failed ones and Batch wrappers are counted on their own.",
+            "Show, in the indicator's settings, switches to Per ledger (the bar's counts over its ledgers, so a 5 second bar and a daily bar read alike) or Share of all (each kind as a % of Total).",
+          ],
+        ],
+        [
+          "The edges of the chart",
+          [
+            "The newest bar is still adding up. In Count its segment is faded and usually dips until the bar closes. Per ledger doesn't dip.",
+            "On 1 and 5 second charts many bars hold no ledger, so the line runs straight on to the next one. It can stop a few seconds short of the newest bar: close times are rounded to 10 seconds, and a ledger arrives a few seconds after it closes.",
+          ],
+        ],
+        ["Where the numbers come from", ["AskCharts' own collector reads every validated ledger from an XRP Ledger server and stores a row for each one."]],
+      ],
+    },
     // Count: the bar's totals (like volume); Per ledger: those over the ledgers that closed in the bar,
     // so a 5s bar and a 1D bar read alike and the newest bar reads right while it fills
     inputs: [{ key: "show", label: "Show", type: "select", options: ["Count", "Per ledger (average)", "Share of all (%)"], default: "Count" }],
     outputs: [
-      line("money", "Money", "#3fb950", { dots: true, lineWidth: 2 }),
-      line("markets", "Markets", "#58a6ff", { dots: true, lineWidth: 2 }),
-      line("nfts", "NFTs", "#d29922", { dots: true, lineWidth: 2 }),
-      line("accounts", "Accounts", "#bc8cff", { dots: true, lineWidth: 2 }),
-      line("other", "Other", "#26c6da", { dots: true, lineWidth: 2, off: true }),
-      line("batch", "Batch", "#787b86", { dots: true, lineWidth: 2, off: true }),
-      line("failed", "Failed", "#f23645", { dots: true, lineWidth: 2, off: true }),
+      line("money", "Money", "#3fb950"),
+      line("markets", "Markets", "#58a6ff"),
+      line("nfts", "NFTs", "#d29922"),
+      line("accounts", "Accounts", "#bc8cff"),
+      line("other", "Other", "#26c6da", { off: true }),
+      line("batch", "Batch", "#787b86", { off: true }),
+      line("failed", "Failed", "#f23645", { off: true }),
       line("total", "Total", "#9598a1", { off: true }),
       // in the legend only: how many ledgers closed in the bar, and the last of them (on the newest bar,
       // the one that just closed)
