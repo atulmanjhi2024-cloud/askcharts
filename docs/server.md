@@ -46,7 +46,7 @@ It listens only on the server itself (port 3778). The next step puts it online.
    its token.
 2. In the tunnel, add a public hostname: your address (`charts.yourdomain.com`), service
    `http://askcharts:3778`.
-3. Put the token in `.env` as `TUNNEL_TOKEN`, then:
+3. Put the token in `.env` as `TUNNEL_TOKEN`, and set `ASKCHARTS_TRUST_PROXY=cloudflare` there too, then:
 
    ```sh
    docker compose --profile tunnel up -d
@@ -60,6 +60,14 @@ charts.yourdomain.com {
   reverse_proxy 127.0.0.1:3778
 }
 ```
+
+With nginx, also pass the visitor's address on with
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (Caddy does it by itself). Then set
+`ASKCHARTS_TRUST_PROXY=forwarded` in `.env` and run `docker compose up -d`.
+
+The setting tells AskCharts which header holds each visitor's address, so the sign-in limits count
+visitors one by one. Use only the one that matches what you set up: anyone can send those headers, and
+AskCharts believes them only because you said a tunnel or proxy writes them.
 
 Either way, opening your address now shows the AskCharts sign in.
 

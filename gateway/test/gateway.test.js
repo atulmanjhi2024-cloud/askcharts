@@ -54,6 +54,8 @@ before(async () => {
       host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`,
       origin: "http://localhost:0", rpID: "localhost", email: "You@Example.com",
       sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log",
+      // as behind a Cloudflare tunnel; the link gap has its own test below
+      trustProxy: "cloudflare", linkGapMs: 0,
     },
     { sendLink: async (link) => { mails.push(link); }, verifyPasskey: fakeVerify },
   );
@@ -400,4 +402,73 @@ test("a grant runs out after its time", async () => {
   } finally {
     quick.closeAllConnections(); quick.close();
   }
+});
+
+// ---------- who's asking: TRUST_PROXY ----------
+// A second gateway with its own settings, for the tests that change them.
+async function extraGateway(over = {}, sendLink = async () => {}) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-test-"));
+  const gw = createGateway(
+    { host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log", ...over },
+    { sendLink, verifyPasskey: fakeVerify },
+  );
+  const url = `http://127.0.0.1:${await listen(gw)}`;
+  return { url, close: () => { gw.closeAllConnections(); gw.close(); } };
+}
+// 31 sign-in tries (the limit is 30 per 10 minutes), each with the headers headersFor(i) gives; the last status
+async function tries(url, headersFor) {
+  let last;
+  for (let i = 0; i < 31; i++)
+    last = await fetch(url + "/auth/login/options", { method: "POST", headers: { "Content-Type": "application/json", Origin: origin, ...headersFor(i) }, body: "{}" });
+  return last.status;
+}
+
+test("with nothing in front, made up address headers don't get around the limits", async () => {
+  const gw = await extraGateway();
+  try {
+    assert.equal(await tries(gw.url, (i) => ({ "CF-Connecting-IP": `203.0.113.${i}` })), 429);
+  } finally { gw.close(); }
+  const gw2 = await extraGateway();
+  try {
+    assert.equal(await tries(gw2.url, (i) => ({ "X-Forwarded-For": `203.0.113.${i}` })), 429);
+  } finally { gw2.close(); }
+});
+
+test("behind Cloudflare, the limits count each visitor by CF-Connecting-IP", async () => {
+  const gw = await extraGateway({ trustProxy: "cloudflare" });
+  try {
+    assert.equal(await tries(gw.url, (i) => ({ "CF-Connecting-IP": `203.0.113.${i}` })), 200);
+    assert.equal(await tries(gw.url, () => ({ "CF-Connecting-IP": "198.51.100.1" })), 429);
+  } finally { gw.close(); }
+});
+
+test("behind Caddy or nginx, only the address the proxy added (the last one) counts", async () => {
+  const gw = await extraGateway({ trustProxy: "forwarded" });
+  try {
+    // the proxy saw a different visitor each time
+    assert.equal(await tries(gw.url, (i) => ({ "X-Forwarded-For": `1.1.1.1, 203.0.113.${i}` })), 200);
+    // one visitor making up the start of the header is still one visitor
+    assert.equal(await tries(gw.url, (i) => ({ "X-Forwarded-For": `203.0.113.${i}, 198.51.100.2` })), 429);
+  } finally { gw.close(); }
+});
+
+test("a misspelled TRUST_PROXY stops the gateway from starting", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-test-"));
+  assert.throws(
+    () => createGateway({ host: "127.0.0.1", port: 0, upstream: `127.0.0.1:${upPort}`, origin, rpID: "localhost", email: "You@Example.com", sessionDays: 7, linkMinutes: 15, dataDir, mailMode: "log", trustProxy: "cloudfare" }),
+    /TRUST_PROXY/,
+  );
+});
+
+test("the account gets at most one link email every 10 minutes, whoever asks", async () => {
+  const sent = [];
+  const gw = await extraGateway({ trustProxy: "cloudflare" }, async (link) => { sent.push(link); });
+  try {
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(gw.url + "/auth/link", { method: "POST", headers: { "Content-Type": "application/json", Origin: origin, "CF-Connecting-IP": `203.0.113.${i}` }, body: JSON.stringify({ email: "you@example.com" }) });
+      assert.equal(r.status, 200);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(sent.length, 1);
+  } finally { gw.close(); }
 });

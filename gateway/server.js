@@ -28,8 +28,12 @@ export function configFromEnv(env = process.env) {
     mailFrom: env.MAIL_FROM || "",
     mailMode: env.MAIL_MODE || "resend",
     resendKey: env.RESEND_API_KEY || "",
+    // What sits in front, so the limits count real visitors: cloudflare (a Cloudflare tunnel),
+    // forwarded (Caddy, nginx and the like), or empty (nothing: visitors connect straight here).
+    trustProxy: env.TRUST_PROXY || "",
   };
 }
+const PROXIES = ["", "cloudflare", "forwarded"];
 
 // ---------- small helpers ----------
 const STATIC = {
@@ -161,6 +165,9 @@ const runsCode = (p) => p === "/api/custom" || p.startsWith("/api/custom/") || p
 
 // ---------- the gateway ----------
 export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {}) {
+  const trustProxy = cfg.trustProxy || "";
+  // A typo must not quietly put every visitor in one bucket, where a stranger's tries lock the owner out.
+  if (!PROXIES.includes(trustProxy)) throw new Error(`TRUST_PROXY is "${trustProxy}": use cloudflare, forwarded, or leave it empty`);
   const secure = cfg.origin.startsWith("https://");
   const COOKIE = secure ? "__Host-qt" : "qt_session";
   const cookieAttrs = `Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
@@ -173,6 +180,12 @@ export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {
   const authLimit = limiter(30, 10 * 60_000);
   const linkLimitIp = limiter(5, 60 * 60_000);
   const mailLimit = limiter(10, 60 * 60_000); // emails actually sent, all addresses
+  // At most one link email per address every 10 minutes. Only the account's own address gets mail,
+  // so a stranger can spend this as easily as the owner can, and the gap is set so that doesn't hurt:
+  // shorter than a link's 15 minute life, a refused request always has a working link in the inbox,
+  // and at 6 an hour the 10 an hour cap above is never reached.
+  const linkGapMs = cfg.linkGapMs ?? 10 * 60_000;
+  const lastLinkMail = new Map(); // address -> when its last link was sent
   const cspLimit = limiter(20, 10 * 60_000);
   // A fresh passkey check buys one grant: one code-running write, from the same session, within
   // two minutes. A session alone isn't enough, so script in the page can't reach those writes.
@@ -182,7 +195,24 @@ export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {
   const grants = new Map(); // grant -> { idHash, expires }
   setInterval(() => { const t = Date.now(); for (const [k, g] of grants) if (g.expires < t) grants.delete(k); }, 60_000).unref();
 
-  const clientIp = (req) => String(req.headers["cf-connecting-ip"] || req.socket.remoteAddress || "");
+  // Who's asking, for the limits. Anyone can send CF-Connecting-IP or X-Forwarded-For, so a header
+  // counts only when TRUST_PROXY says what's in front: Cloudflare sets CF-Connecting-IP itself, and a
+  // proxy like Caddy or nginx adds the address it saw to the end of X-Forwarded-For (the start is
+  // whatever the visitor sent). Otherwise only the connection's own address counts.
+  let warnedHeaders = false;
+  const clientIp = (req) => {
+    const h = req.headers;
+    if (trustProxy === "cloudflare" && h["cf-connecting-ip"]) return String(h["cf-connecting-ip"]);
+    if (trustProxy === "forwarded" && h["x-forwarded-for"]) {
+      const last = String(h["x-forwarded-for"]).split(",").pop().trim();
+      if (last) return last;
+    }
+    if (!trustProxy && !warnedHeaders && (h["cf-connecting-ip"] || h["x-forwarded-for"])) {
+      warnedHeaders = true;
+      console.warn("[gateway] requests come through a proxy but TRUST_PROXY is empty, so all visitors share one set of limits. Set TRUST_PROXY to cloudflare or forwarded.");
+    }
+    return String(req.socket.remoteAddress || "");
+  };
   const sessionOf = (req) => auth.readSession(parseCookies(req.headers.cookie)[COOKIE]);
   const sessionCookie = (s) => `${COOKIE}=${s.id}; ${cookieAttrs}; Max-Age=${s.maxAge}`;
   const clearCookie = `${COOKIE}=; ${cookieAttrs}; Max-Age=0`;
@@ -296,7 +326,10 @@ export function createGateway(cfg, { sendLink = mailer(cfg), verifyPasskey } = {
         sendJson(res, 200, { ok: true });
         const link = auth.createLink(body.email);
         if (!link) return;
+        if (Date.now() - (lastLinkMail.get(link.to) ?? -Infinity) < linkGapMs)
+          return console.error("[mail] a link went to this address less than 10 minutes ago, not sent again");
         if (!mailLimit("all")) return console.error("[mail] hourly cap reached, link not sent");
+        lastLinkMail.set(link.to, Date.now());
         sendLink(link).catch((e) => console.error(`[mail] failed: ${e.message}`));
         return;
       }
@@ -374,7 +407,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (cfg.mailMode === "resend" && !cfg.mailFrom) throw new Error("MAIL_FROM is not set (the sender, like AskCharts <sign-in@your-domain>)");
   const server = createGateway(cfg);
   server.listen(cfg.port, cfg.host, () => {
-    console.log(`gateway on http://${cfg.host}:${cfg.port} origin=${cfg.origin} rpID=${cfg.rpID} upstream=${cfg.upstream} mail=${cfg.mailMode}`);
+    console.log(`gateway on http://${cfg.host}:${cfg.port} origin=${cfg.origin} rpID=${cfg.rpID} upstream=${cfg.upstream} mail=${cfg.mailMode} proxy=${cfg.trustProxy || "none"}`);
     if (server.auth.passkeyCount() === 0)
       console.log(`No passkey yet. Open ${cfg.origin}/login and choose "New device? Email me a link"${cfg.mailMode === "log" ? " (the link is written here), or run: node gateway/link.mjs" : ""}.`);
   });

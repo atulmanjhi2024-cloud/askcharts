@@ -28,7 +28,11 @@ The Docker install runs it for you (`run.mjs` starts it when `ASKCHARTS_GATEWAY=
 ## Settings
 
 `run.mjs` sets these from the Docker settings: `ORIGIN`, `RP_ID` (its host name), `ALLOWED_EMAIL`,
-`UPSTREAM` (the app), `DATA_DIR`, `HOST` and `PORT` (3778). To email links, set `MAIL_MODE=resend`,
+`UPSTREAM` (the app), `DATA_DIR`, `HOST` and `PORT` (3778), and `TRUST_PROXY` from
+`ASKCHARTS_TRUST_PROXY`. That one tells the gateway what's in front of it, so the rate limits count each
+visitor: `cloudflare` for a Cloudflare tunnel, `forwarded` for Caddy, nginx and the like, empty when
+nothing is in front. Anyone can send the headers these read, so set it only to what you really use. A
+value it doesn't know stops the gateway from starting. To email links, set `MAIL_MODE=resend`,
 `RESEND_API_KEY` (a sending-only key from resend.com) and `MAIL_FROM` (like
 `AskCharts <sign-in@your-domain>`).
 
