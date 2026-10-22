@@ -2445,6 +2445,7 @@ select.cs-num.ai-in { padding-right: 8px; }
 .md-state i { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--up); }
 .md-state.busy i { background: var(--accent); animation: md-pulse 1.2s infinite ease-in-out; }
 .md-state.warn i { background: #f7a600; }
+.md-state.idle i { background: var(--muted); }
 .md-state.err i { background: var(--down); }
 .md-state.err span { color: var(--down); }
 @keyframes md-pulse { 50% { opacity: 0.35; } }
@@ -2745,6 +2746,7 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 /* Settings, Updates: a dot on the gear when a newer AskCharts is out, and the release notes */
 #settingsBtn { position: relative; }
 #settingsBtn.has-update::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.up-lead { margin: 6px 0 2px; font-size: 13px; line-height: 1.5; color: var(--text); }
 .up-notes { margin: 4px 0 10px; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--text); }
 .up-notes li { margin-bottom: 4px; }
 .up-steps { margin: 4px 0 10px; padding-left: 20px; font-size: 13px; line-height: 1.5; color: var(--text); }

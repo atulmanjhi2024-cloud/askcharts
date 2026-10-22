@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.9 (2026-10-22)
+
+Settings, Updates remembers its last check.
+
+- After an update or a restart, the page shows the last check's answer instead of "Not checked yet". A new install
+  that hasn't checked yet says it will within the hour.
+- A release's notes start with their summary line, then the list of changes.
+
 ## 0.1.8 (2026-10-22)
 
 Settings, Updates makes the next step plain.

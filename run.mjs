@@ -284,6 +284,13 @@ function installRecord() {
 }
 const UPDATES = { status: path.join(dirs.updates, "status.json"), settings: path.join(dirs.updates, "settings.json"), result: path.join(dirs.updates, "result.json") };
 let update = { state: "idle", checkedAt: null, latest: null, newer: false, error: null, target: null };
+// The last check outlives a restart (an update, a login): its answer, measured against the version running now,
+// so the page doesn't say "Not checked yet" until the next daily check
+{
+  const prev = readJson(UPDATES.status);
+  if (typeof prev?.checkedAt === "string" && typeof prev.latest?.version === "string" && /^\d+\.\d+\.\d+$/.test(prev.latest.version))
+    update = { ...update, checkedAt: prev.checkedAt, latest: prev.latest, newer: compare(prev.latest.version, VERSION) > 0 };
+}
 function writeUpdates() {
   const rec = installRecord();
   const s = {

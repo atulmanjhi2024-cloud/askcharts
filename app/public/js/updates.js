@@ -10,14 +10,16 @@ const cmd = (text) => `<div class="md-add"><input class="cs-num ai-in" readonly 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const day = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 const state = (tone, text) => `<div class="md-state ${tone}"><i></i><span>${esc(text)}</span></div>`;
-// the release notes: the changelog's lines, as a list
-const notes = (text) =>
-  `<ul class="up-notes">${text
+// the release notes: the changelog's summary line, then its changes as a list
+const notes = (text) => {
+  const parts = text
     .split(/\n(?=- )/)
-    .map((l) => l.replace(/^- /, "").replace(/\s*\n\s*/g, " ").trim())
-    .filter(Boolean)
-    .map((l) => `<li>${esc(l)}</li>`)
-    .join("")}</ul>`;
+    .map((l) => l.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean);
+  const lead = parts[0] && !parts[0].startsWith("- ") ? parts.shift() : "";
+  const items = parts.map((l) => `<li>${esc(l.replace(/^- /, ""))}</li>`).join("");
+  return `${lead ? `<p class="up-lead">${esc(lead)}</p>` : ""}${items ? `<ul class="up-notes">${items}</ul>` : ""}`;
+};
 
 export function updatesPage() {
   // checking: Check now pressed and not answered yet; checked: answered, so the line says it just ran
@@ -50,7 +52,7 @@ export function updatesPage() {
       else if (s.latest) {
         const just = st.checked ? "Checked just now: " : "";
         h.push(s.newer ? state("warn", `${just}AskCharts ${s.latest.version} is out (${s.latest.date}).`) : state("ok", st.checked ? "Checked just now: this is the latest version." : `This is the latest version (checked ${day(s.checkedAt)}).`));
-      } else h.push(state("warn", "Not checked yet."));
+      } else h.push(state("idle", s.autoCheck ? "Not checked yet. AskCharts checks within the hour, or press Check now." : "Not checked yet. Press Check now."));
       if (s.newer && s.latest?.notes) h.push(notes(s.latest.notes));
       const check = `<button class="btn" data-up="check" ${busy ? "disabled" : ""}>Check now</button>`;
       if (s.kind === "desktop" && s.updatable) {
