@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 (2026-10-22)
+
+AskCharts can update itself now: Settings, Updates.
+
+- Settings, Updates: the version you have, the newest one with its notes, Check now and Update now. On a
+  computer AskCharts updates itself: it checks the release's signature and every file before anything stops,
+  keeps your charts, settings and keys, and goes back to the old version by itself if the new one doesn't
+  start. On a server (Docker) the page shows the update commands. A dot on the Settings gear says a newer
+  version is out (checked once a day; a switch turns that off).
+- Releases are signed with a key that never touches GitHub, so a stolen GitHub login can't push an update.
+- The Mac and Linux installer keeps the old version until the new one answers, and puts it back if an update
+  fails partway. On Windows, update by pasting the install line again for now: Update now comes to Windows once
+  it has been tested there.
+
 ## 0.1.4 (2026-10-22)
 
 XRPL On chain starts with up to 90 days of history, and there's a new Exchange flows indicator.

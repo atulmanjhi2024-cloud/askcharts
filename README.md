@@ -86,7 +86,12 @@ it starts by itself whenever you log in.
 
 - **Make it look like an app.** In Chrome or Edge, choose "Install AskCharts" from the address bar. It gets its own
   window and a dock or taskbar icon.
-- **Update.** Paste the same line again. Your charts and settings stay.
+- **Update.** Settings, Updates, then Update now. A dot on the gear says a new version is out. AskCharts checks
+  the update's signature and every file before anything stops, keeps your charts and settings, and goes back to
+  the old version by itself if the new one doesn't start. To see if there's a new one, AskCharts asks GitHub
+  once a day, which GitHub sees like any download; a switch on the same page turns that off. Versions before
+  0.1.5 don't have the button: paste the same line again once, and from then on it's a click. On Windows, keep
+  pasting the line for now: Update now comes to Windows once it has been tested there.
 - **Remove.** On a Mac or Linux, run `~/AskCharts/uninstall`. On Windows, double click `uninstall.cmd` in your
   `AskCharts` folder. Your charts and settings stay in its `data` folder until you delete it.
 

@@ -100,7 +100,14 @@ if you run `chmod 600 .env`. Don't share or commit it.
 
 ## Everyday
 
-- **Update:** `git pull && docker compose up -d --build`. Your data stays.
+- **Update:** Settings, Updates says when a new version is out and shows these steps with the server's own folder.
+  An app can't rebuild its own container, so it doesn't update a server by itself.
+  1. Sign in to the server (`ssh you@your-server`).
+  2. Go to the folder `git clone` made: `cd ~/askcharts` if you cloned it in your home folder. Not sure where it
+     is? `docker compose ls` lists it under CONFIG FILES.
+  3. `git pull && docker compose up -d --build`. It takes a minute or two; your data stays in the `askcharts-data`
+     volume.
+  4. Reload AskCharts. Settings, Updates shows the new version.
 - **Watch it:** `docker compose logs -f askcharts`
 - **Stop it:** `docker compose down` (your data stays). Start again with `docker compose up -d`.
 - **Back it up:** everything you make is in the `askcharts-data` volume:

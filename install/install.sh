@@ -7,7 +7,11 @@
 # update: your charts and settings stay in ~/AskCharts/data. To remove it: ~/AskCharts/uninstall
 #
 # For testing: ASKCHARTS_BASE (where to download AskCharts from), ASKCHARTS_HOME (instead of ~/AskCharts),
-# ASKCHARTS_LABEL (the login item's name, default askcharts), ASKCHARTS_NO_SERVICE=1 (no systemd).
+# ASKCHARTS_LABEL (the login item's name, default askcharts), ASKCHARTS_NO_SERVICE=1 (no systemd),
+# ASKCHARTS_UPDATE_BASE (where the Updates page looks for new releases, kept in install.json).
+# The Updates page runs it with ASKCHARTS_SOURCE (a folder it has downloaded and checked: nothing is downloaded
+# again but Node.js) and ASKCHARTS_UPDATE=1 (keep the old version until the new one answers, put it back if it
+# doesn't, and write data/updates/result.json).
 set -eu
 
 BASE=${ASKCHARTS_BASE:-https://github.com/realgrapedrop/askcharts/releases/latest/download}
@@ -17,7 +21,9 @@ NODE_VERSION=24.21.0
 NODE_BASE=https://nodejs.org/dist/v$NODE_VERSION
 
 say() { printf '%s\n' "$*"; }
+why=""
 fail() {
+  why="$*"
   printf 'AskCharts: %s\n' "$*" >&2
   exit 1
 }
@@ -42,23 +48,95 @@ case "$(uname -m)" in
   *) fail "this computer's processor ($(uname -m)) isn't one Node.js $NODE_VERSION supports here" ;;
 esac
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+plist="$HOME/Library/LaunchAgents/$LABEL.plist"
+unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$LABEL.service"
+autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$LABEL.desktop"
+desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/$LABEL.desktop"
+# how this install starts, for start_it and for the Updates page (install.json)
+if [ "$os" = darwin ]; then
+  starter=launchd
+elif [ -z "${ASKCHARTS_NO_SERVICE:-}" ] && systemctl --user show-environment >/dev/null 2>&1; then
+  starter=systemd
+else
+  starter=autostart
+fi
+start_it() {
+  case $starter in
+    launchd) launchctl bootstrap "gui/$(id -u)" "$plist" || fail "couldn't start AskCharts (launchctl)" ;;
+    systemd) systemctl --user start "$LABEL.service" >/dev/null 2>&1 || fail "couldn't start AskCharts (systemd)" ;;
+    *) nohup "$DIR/start" >> "$DIR/data/askcharts.log" 2>&1 & ;;
+  esac
+}
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+# the Updates page reads how it went
+from=""
+to=""
+result() { # ok reason
+  [ -n "${ASKCHARTS_UPDATE:-}" ] || return 0
+  mkdir -p "$DIR/data/updates"
+  printf '{ "ok": %s, "from": "%s", "to": "%s", "at": "%s", "reason": "%s" }\n' "$1" "$(esc "$from")" "$(esc "$to")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(esc "$2")" > "$DIR/data/updates/result.json"
+}
+# the install record's version, after going back to the old one
+record_version() {
+  [ -f "$DIR/install.json" ] || return 0
+  sed "s/\"version\": \"[^\"]*\"/\"version\": \"$(esc "$1")\"/" "$DIR/install.json" > "$DIR/install.json.tmp" && mv "$DIR/install.json.tmp" "$DIR/install.json"
+}
 
-# fetch FILE from a base URL, then check it against that base's checksum list
+# An update that fails partway: whatever this run moved aside goes back (never an older leftover), AskCharts
+# starts again if this run stopped it, and the Updates page gets the reason.
+stopped=""
+swapped=""
+nodeswapped=""
+done_already=""
+tmp=$(mktemp -d)
+on_exit() {
+  code=$?
+  if [ "$code" != 0 ] && [ -n "${ASKCHARTS_UPDATE:-}" ] && [ -z "$done_already" ]; then
+    if [ -n "$swapped" ] && [ -d "$DIR/program.old" ]; then
+      rm -rf "$DIR/program"
+      mv "$DIR/program.old" "$DIR/program"
+      record_version "$from"
+    fi
+    if [ -n "$nodeswapped" ] && [ -d "$DIR/node.old" ]; then
+      rm -rf "$DIR/node"
+      mv "$DIR/node.old" "$DIR/node"
+    fi
+    result false "${why:-the installer stopped (exit $code)}"
+    # in a subshell: a start that fails says so without ending this
+    if [ -n "$stopped" ]; then (start_it) || true; fi
+  fi
+  rm -rf "$tmp"
+}
+trap on_exit EXIT
+trap 'exit 1' INT TERM
+
+# get FILE from a base URL, or from ASKCHARTS_SOURCE when that's the base (an update, checked already)
+get() { # base file
+  if [ -n "${ASKCHARTS_SOURCE:-}" ] && [ "$1" = "$BASE" ]; then
+    cp "$ASKCHARTS_SOURCE/$2" "$tmp/$2" || fail "$2 isn't in $ASKCHARTS_SOURCE"
+  else
+    curl -fsSL --retry 3 -o "$tmp/$2" "$1/$2" || fail "couldn't download $1/$2"
+  fi
+}
+# get FILE, then check it against that base's checksum list
 fetch() { # base file sums-file
-  curl -fsSL --retry 3 -o "$tmp/$2" "$1/$2" || fail "couldn't download $1/$2"
+  get "$1" "$2"
   want=$(grep " \*\{0,1\}$2\$" "$tmp/$3" | cut -d' ' -f1)
   [ -n "$want" ] || fail "$2 isn't in $1/$3"
   [ "$(sha "$tmp/$2")" = "$want" ] || fail "$2 didn't match its checksum: not installing it"
 }
 
 say "Downloading AskCharts..."
-curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || fail "couldn't download $BASE/SHA256SUMS"
+get "$BASE" SHA256SUMS
 fetch "$BASE" askcharts.tar.gz SHA256SUMS
+mkdir -p "$tmp/new"
+tar -xzf "$tmp/askcharts.tar.gz" -C "$tmp/new"
+[ -f "$tmp/new/askcharts/run.mjs" ] || fail "the download isn't an AskCharts release"
 mkdir -p "$DIR"
 
+# Node.js: downloaded and checked now, swapped in only once AskCharts has stopped
 node="$DIR/node/bin/node"
+newnode=""
 if [ -x "$node" ] && [ "$("$node" --version 2>/dev/null)" = "v$NODE_VERSION" ]; then
   say "Node.js $NODE_VERSION is already here."
 else
@@ -69,10 +147,10 @@ else
   mkdir -p "$tmp/node"
   tar -xzf "$tmp/$pkg.tar.gz" -C "$tmp/node"
   # just the runtime and its licence: AskCharts needs no npm
-  rm -rf "$DIR/node"
-  mkdir -p "$DIR/node/bin"
-  mv "$tmp/node/$pkg/bin/node" "$DIR/node/bin/node"
-  mv "$tmp/node/$pkg/LICENSE" "$DIR/node/LICENSE"
+  newnode="$tmp/newnode"
+  mkdir -p "$newnode/bin"
+  mv "$tmp/node/$pkg/bin/node" "$newnode/bin/node"
+  mv "$tmp/node/$pkg/LICENSE" "$newnode/LICENSE"
 fi
 
 # stop the running one (an update), so its files can be swapped
@@ -92,33 +170,43 @@ stop_running() {
     done
   fi
 }
+from=$(cat "$DIR/program/VERSION" 2>/dev/null || true)
+to=$(cat "$tmp/new/askcharts/VERSION" 2>/dev/null || true)
+stopped=1
 stop_running
 # a port from the last run would point at the wrong place until the new one writes its own
 rm -f "$DIR/data/port"
 
 say "Installing into $DIR..."
-mkdir -p "$tmp/new"
-tar -xzf "$tmp/askcharts.tar.gz" -C "$tmp/new"
-[ -f "$tmp/new/askcharts/run.mjs" ] || fail "the download isn't an AskCharts release"
-rm -rf "$DIR/program.old"
-[ -d "$DIR/program" ] && mv "$DIR/program" "$DIR/program.old"
+# the old program (and Node.js, when it changes) stay beside the new ones until the new one answers
+rm -rf "$DIR/program.old" "$DIR/node.old"
+if [ -d "$DIR/program" ]; then
+  mv "$DIR/program" "$DIR/program.old"
+  swapped=1
+fi
 mv "$tmp/new/askcharts" "$DIR/program"
-rm -rf "$DIR/program.old"
+if [ -n "$newnode" ]; then
+  if [ -d "$DIR/node" ]; then
+    mv "$DIR/node" "$DIR/node.old"
+    nodeswapped=1
+  fi
+  mv "$newnode" "$DIR/node"
+fi
 mkdir -p "$DIR/data"
 
-# start: what the login item runs, and what you can run yourself (start --open opens the browser)
+# start: what the login item runs, and what you can run yourself (start --open opens the browser). If the
+# power went in the middle of a swap, it puts the old copy back first.
 cat > "$DIR/start" <<EOF
 #!/bin/sh
+for p in program node; do
+  if [ ! -d "$DIR/\$p" ] && [ -d "$DIR/\$p.old" ]; then mv "$DIR/\$p.old" "$DIR/\$p"; fi
+done
 ASKCHARTS_DATA="$DIR/data" exec "$DIR/node/bin/node" "$DIR/program/run.mjs" "\$@"
 EOF
 chmod +x "$DIR/start"
 
-plist="$HOME/Library/LaunchAgents/$LABEL.plist"
-unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$LABEL.service"
-autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$LABEL.desktop"
-desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/$LABEL.desktop"
 
-if [ "$os" = darwin ]; then
+if [ "$starter" = launchd ]; then
   mkdir -p "$HOME/Library/LaunchAgents"
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -127,7 +215,7 @@ if [ "$os" = darwin ]; then
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$DIR/node/bin/node</string><string>$DIR/program/run.mjs</string></array>
+  <array><string>/bin/sh</string><string>$DIR/start</string></array>
   <key>EnvironmentVariables</key>
   <dict><key>ASKCHARTS_DATA</key><string>$DIR/data</string></dict>
   <key>RunAtLoad</key><true/>
@@ -137,8 +225,7 @@ if [ "$os" = darwin ]; then
 </dict>
 </plist>
 EOF
-  launchctl bootstrap "gui/$(id -u)" "$plist" || fail "couldn't start AskCharts (launchctl)"
-elif [ -z "${ASKCHARTS_NO_SERVICE:-}" ] && systemctl --user show-environment >/dev/null 2>&1; then
+elif [ "$starter" = systemd ]; then
   mkdir -p "$(dirname "$unit")"
   cat > "$unit" <<EOF
 [Unit]
@@ -153,7 +240,7 @@ RestartSec=5
 WantedBy=default.target
 EOF
   systemctl --user daemon-reload
-  systemctl --user enable --now "$LABEL.service" >/dev/null 2>&1 || fail "couldn't start AskCharts (systemd)"
+  systemctl --user enable "$LABEL.service" >/dev/null 2>&1 || fail "couldn't add AskCharts to your logins (systemd)"
 else
   # no systemd for this user: start it from the desktop's autostart, and now
   mkdir -p "$(dirname "$autostart")"
@@ -165,8 +252,12 @@ Exec=$DIR/start
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 EOF
-  nohup "$DIR/start" >> "$DIR/data/askcharts.log" 2>&1 &
 fi
+# the install record: where it is and how it starts, for the Updates page (and the next update)
+cat > "$DIR/install.json" <<EOF
+{ "dir": "$(esc "$DIR")", "label": "$(esc "$LABEL")", "starter": "$starter", "version": "$(esc "$to")", "updateBase": "$(esc "${ASKCHARTS_UPDATE_BASE:-}")" }
+EOF
+start_it
 
 # Linux: AskCharts in the applications menu (it opens the browser on the running one)
 if [ "$os" = linux ]; then
@@ -201,22 +292,45 @@ echo "AskCharts is removed. Your charts and settings are still in $DIR/data: del
 EOF
 chmod +x "$DIR/uninstall"
 
-# wait for it, then open it
-say "Starting AskCharts..."
-i=0
-url=""
-while [ $i -lt 60 ]; do
-  if [ -f "$DIR/data/port" ]; then
-    port=$(cat "$DIR/data/port")
-    if curl -fsS -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null; then
-      url="http://localhost:$port"
-      break
+# wait for it (a minute at most): url is where it answers, empty if it didn't
+wait_up() {
+  i=0
+  url=""
+  while [ $i -lt 60 ]; do
+    if [ -f "$DIR/data/port" ]; then
+      port=$(cat "$DIR/data/port")
+      if curl -fsS -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null; then
+        url="http://localhost:$port"
+        return 0
+      fi
     fi
+    sleep 1
+    i=$((i + 1))
+  done
+}
+say "Starting AskCharts..."
+wait_up
+if [ -z "$url" ] && [ -d "$DIR/program.old" ]; then
+  # the new version didn't answer: the old one comes back
+  say "AskCharts $to didn't start, so $from goes back in."
+  stop_running
+  rm -rf "$DIR/program"
+  mv "$DIR/program.old" "$DIR/program"
+  if [ -d "$DIR/node.old" ]; then
+    rm -rf "$DIR/node"
+    mv "$DIR/node.old" "$DIR/node"
   fi
-  sleep 1
-  i=$((i + 1))
-done
+  record_version "$from"
+  rm -f "$DIR/data/port"
+  start_it
+  wait_up
+  result false "$to didn't start within a minute"
+  done_already=1
+  fail "AskCharts $to didn't start; $from is back${url:+ and running at $url}. What it said: $DIR/data/askcharts.log (Mac) or journalctl --user -u $LABEL"
+fi
 [ -n "$url" ] || fail "AskCharts didn't start. What it said is in $DIR/data/askcharts.log (Mac) or: journalctl --user -u $LABEL"
+rm -rf "$DIR/program.old" "$DIR/node.old"
+result true ""
 if [ -z "${ASKCHARTS_NO_OPEN:-}" ]; then
   if [ "$os" = darwin ]; then open "$url"; else xdg-open "$url" >/dev/null 2>&1 || true; fi
 fi

@@ -22,6 +22,7 @@ import * as heatmap from "./lib/heatmap.js";
 import * as catalog from "./lib/catalog.js";
 import * as history from "./lib/history.js";
 import * as onchain from "./lib/onchain.js";
+import * as updates from "./lib/updates.js";
 import { registerIndicator, INDICATORS } from "./public/lib/indicators.js";
 import { conditionFn, backtest, magnifierTf } from "./public/lib/backtest.js";
 import { quantChecks } from "./public/lib/quant.js";
@@ -443,6 +444,9 @@ async function handle(req, res) {
     if (p === "/api/history/pairs" && req.method === "GET") return send(res, 200, await data.krakenUsdPairs());
     // ---------- Settings, Market data: your own data keys (saved, checked, removed; never sent back) ----------
     if (p === "/api/feeds/keys" && req.method === "GET") return send(res, 200, feeds.keysStatus());
+    // Settings, Updates: what AskCharts' runner says, and Check now, Update now and the daily check passed on to it
+    if (p === "/api/updates" && req.method === "GET") return send(res, 200, updates.status());
+    if (p === "/api/updates" && req.method === "POST") return send(res, 200, await updates.act(await readBody(req, 1e3)));
     if (p === "/api/feeds/keys" && req.method === "POST") return send(res, 200, await feeds.saveKey(await readBody(req, 1e4)));
     if (p === "/api/feeds/keys/test" && req.method === "POST") return send(res, 200, await feeds.testKey((await readBody(req, 1e3)).provider));
     if (p.startsWith("/api/feeds/keys/") && req.method === "DELETE") return send(res, 200, feeds.removeKey(p.split("/")[4]));

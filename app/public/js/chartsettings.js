@@ -5,6 +5,7 @@ import { esc, exchange, ticker } from "./api.js";
 import { aiSettings } from "./copilot.js";
 import { marketData } from "./marketdata.js";
 import { dataKeys } from "./datakeys.js";
+import { updatesPage } from "./updates.js";
 import { PALETTE, rgbOf, hexOf, cssOf, lineIcon, STYLES } from "./drawtoolbar.js";
 
 // ---------- defaults ----------
@@ -304,6 +305,7 @@ const TAB_ICONS = {
   about: svg('<circle cx="14" cy="14" r="9.5"/><path d="M14 12.5v7M14 8.6v.4"/>'),
   market: svg('<ellipse cx="14" cy="7.5" rx="8" ry="3"/><path d="M6 7.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13M6 14c0 1.66 3.58 3 8 3s8-1.34 8-3"/>'),
   keys: svg('<circle cx="10" cy="18" r="5"/><path d="M13.5 14.5L23 5M18.5 9.5l3 3M16 12l2.5 2.5"/>'),
+  updates: svg('<path d="M14 4.5v13M8.5 12.5l5.5 5.5 5.5-5.5M5.5 22.5h17"/>'),
 };
 const TABS = [
   ["symbol", "Symbol"],
@@ -316,6 +318,7 @@ const TABS = [
   ["ai", "AskCharts AI"],
   ["market", "Market data"],
   ["keys", "Data keys"],
+  ["updates", "Updates"],
   ["about", "About"],
 ];
 // the AskCharts mark, for the About tab
@@ -355,6 +358,11 @@ export function openChartSettings(app, chartTypes, start) {
   const dk = dataKeys();
   dk.load().then(() => {
     if (tab === "keys" && page.isConnected) redraw();
+  });
+  // the version, and Check now and Update now
+  const up = updatesPage();
+  up.load().then(() => {
+    if (tab === "updates" && page.isConnected) redraw();
   });
   const poll = setInterval(async () => {
     if (!page.isConnected) return clearInterval(poll);
@@ -563,6 +571,9 @@ export function openChartSettings(app, chartTypes, start) {
     keys() {
       return dk.html();
     },
+    updates() {
+      return up.html();
+    },
     // What AskCharts is built on, with the credits the licences ask for: TradingView's attribution
     // notice and a link to tradingview.com (Lightweight Charts, Apache 2.0; it replaces the logo that
     // used to sit on the chart) and Quant Terminal's MIT notice.
@@ -606,6 +617,7 @@ export function openChartSettings(app, chartTypes, start) {
     if (t === "ai") ai.bind(page, redraw);
     if (t === "market") md.bind(page, redraw);
     if (t === "keys") dk.bind(page, redraw);
+    if (t === "updates") up.bind(page, redraw);
     for (const b of page.querySelectorAll("[data-cs-goto]")) b.onclick = () => show(b.dataset.csGoto);
   };
   const redraw = () => show(tab);

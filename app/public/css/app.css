@@ -2742,3 +2742,12 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 .ind-info-pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 10px; }
 .ind-info-pop dt { font-weight: 600; }
 .ind-info-pop dd { margin: 0; }
+/* Settings, Updates: a dot on the gear when a newer AskCharts is out, and the release notes */
+#settingsBtn { position: relative; }
+#settingsBtn.has-update::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.up-notes { margin: 4px 0 10px; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--text); }
+.up-notes li { margin-bottom: 4px; }
+.up-steps { margin: 4px 0 10px; padding-left: 20px; font-size: 13px; line-height: 1.5; color: var(--text); }
+.up-steps li { margin-bottom: 10px; }
+.up-steps .md-add { margin: 6px 0 4px; }
+.up-steps code { font-size: 12px; }

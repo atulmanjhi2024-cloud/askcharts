@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // AskCharts' runner. It starts the app and keeps it running, along with what goes with it: the history
-// importer when there's work for it, the XRPL collector when it's turned on, and on a server (Docker)
-// the sign-in gateway. Plain Node, nothing to install.
+// importer when there's work for it, the XRPL collector when it's turned on, on a server (Docker) the sign-in
+// gateway, and on a computer the updates (update.mjs: a daily check, and Update now in Settings, Updates).
+// Plain Node, nothing to install.
 //
 //   node run.mjs            start, and print the address
 //   node run.mjs --open     start, then open AskCharts in the browser (the desktop installers do this)
@@ -10,7 +11,7 @@
 // code, so updating AskCharts never touches it:
 //   app/       charts, layouts, watchlists, alerts and settings     custom/    your own indicators
 //   history/   Kraken's bars (Settings, Market data)                 onchain/   the XRP Ledger store
-//   gateway/   passkeys and sessions (a server only)
+//   gateway/   passkeys and sessions (a server only)                  updates/   what the Updates page shows
 //
 // Settings (environment):
 //   PORT                 the app's port: 3777, or the next free one
@@ -24,11 +25,12 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { RELEASES, WINDOWS_TESTED, latest, download, launch, compare } from "./update.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.resolve(process.env.ASKCHARTS_DATA || path.join(HERE, "data"));
 const OPEN = process.argv.includes("--open");
-const dirs = Object.fromEntries(["app", "custom", "history", "onchain", "gateway"].map((d) => [d, path.join(DATA, d)]));
+const dirs = Object.fromEntries(["app", "custom", "history", "onchain", "gateway", "updates"].map((d) => [d, path.join(DATA, d)]));
 const log = (who, msg) => console.log(`${new Date().toISOString()} [${who}] ${msg}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -101,6 +103,7 @@ const appEnv = {
   QT_ONCHAIN: path.join(dirs.onchain, "xrpl.sqlite"),
   ONCHAIN_DATA: dirs.onchain,
   QT_CATALOG: path.join(HERE, "catalog", "data", "catalog.sqlite"),
+  ASKCHARTS_UPDATES: dirs.updates,
 };
 
 // ---- children: their output in this log, a restart after a crash (waiting longer each time)
@@ -112,6 +115,8 @@ function run(name, args, env, { restart = false } = {}) {
   // the fourth channel ties the child to this runner: it exits when the runner goes, however it goes
   const child = spawn(process.execPath, args, { cwd: HERE, env, stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true });
   kids.set(name, child);
+  // the app passes on Settings, Updates' Check now and Update now
+  if (name === "app") child.on("message", (m) => (m?.updates === "check" ? checkUpdates() : m?.updates === "install" ? installUpdate() : null));
   for (const s of [child.stdout, child.stderr]) {
     let rest = "";
     s.on("data", (b) => {
@@ -236,6 +241,107 @@ const url = `http://localhost:${PORT}`;
   log("runner", `AskCharts is running: ${url}${process.env.ASKCHARTS_GATEWAY === "1" ? ` (behind the sign-in gateway on port ${process.env.ASKCHARTS_GATEWAY_PORT || 3778})` : ""}`);
   if (OPEN) openBrowser(url);
 })();
+
+// ---- updates: a daily check, and Update now (Settings, Updates). Only an install the installer made can
+// update itself: its install.json says where it is and how it starts. Docker gets the commands instead.
+const VERSION = fs.readFileSync(path.join(HERE, "VERSION"), "utf8").trim();
+const readJson = (f) => {
+  try {
+    return JSON.parse(fs.readFileSync(f, "utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    return null;
+  }
+};
+// the same folder however it's written (a linked home folder; a drive letter in another case on Windows)
+const real = (p) => {
+  try {
+    p = fs.realpathSync(p);
+  } catch {
+    /* gone: as written */
+  }
+  return process.platform === "win32" ? p.toLowerCase() : p;
+};
+function installRecord() {
+  const r = readJson(path.join(HERE, "..", "install.json"));
+  return r && typeof r.dir === "string" && real(path.resolve(r.dir, "program")) === real(HERE) ? r : null;
+}
+const UPDATES = { status: path.join(dirs.updates, "status.json"), settings: path.join(dirs.updates, "settings.json"), result: path.join(dirs.updates, "result.json") };
+let update = { state: "idle", checkedAt: null, latest: null, newer: false, error: null, target: null };
+function writeUpdates() {
+  const rec = installRecord();
+  const s = {
+    version: VERSION,
+    kind: rec ? "desktop" : fs.existsSync("/.dockerenv") ? "docker" : "manual",
+    starter: rec?.starter || null,
+    updatable: !!rec && (rec.starter !== "windows" || WINDOWS_TESTED),
+    // Docker: the folder on the server it was started from (compose.yaml passes it), for the update steps
+    folder: /^(\/|[A-Za-z]:\\)/.test(process.env.ASKCHARTS_FOLDER || "") ? process.env.ASKCHARTS_FOLDER.slice(0, 300) : null,
+    autoCheck: readJson(UPDATES.settings)?.autoCheck !== false,
+    ...update,
+    result: readJson(UPDATES.result),
+    updatedAt: new Date().toISOString(),
+  };
+  const tmp = `${UPDATES.status}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(s, null, 1));
+  fs.renameSync(tmp, UPDATES.status);
+}
+const updateBase = () => installRecord()?.updateBase || process.env.ASKCHARTS_UPDATE_BASE || RELEASES;
+async function checkUpdates() {
+  if (update.state !== "idle") return;
+  update = { ...update, state: "checking", error: null };
+  writeUpdates();
+  try {
+    const l = await latest({ base: updateBase() });
+    update = { ...update, latest: l, newer: compare(l.version, VERSION) > 0 };
+  } catch (e) {
+    update.error = e.message;
+  }
+  update = { ...update, state: "idle", checkedAt: new Date().toISOString() };
+  writeUpdates();
+}
+async function installUpdate() {
+  const rec = installRecord();
+  if (!rec || update.state !== "idle" || (rec.starter === "windows" && !WINDOWS_TESTED)) return;
+  update = { ...update, state: "downloading", error: null };
+  writeUpdates();
+  try {
+    // everything downloaded and checked before anything stops
+    const dir = path.join(dirs.updates, "next");
+    const got = await download({ base: updateBase(), dir, current: VERSION });
+    update = { ...update, state: "installing", target: got.version };
+    writeUpdates();
+    log("runner", `updating to ${got.version}: the installer stops AskCharts, swaps it and starts it again`);
+    // the result on file now: a different one, later, is this update's (the installer's clock reads seconds only)
+    const launched = Date.now(),
+      before = JSON.stringify(readJson(UPDATES.result));
+    launch({ installer: got.installer, source: dir, install: rec, logFile: path.join(dirs.updates, "update.log") });
+    // All well, the installer stops this runner. If it fails before that, it writes why in result.json: back
+    // to idle with the reason (and after 15 minutes without a word, too).
+    const watch = setInterval(() => {
+      const r = readJson(UPDATES.result);
+      const fresh = !!r && JSON.stringify(r) !== before;
+      if (!fresh && Date.now() - launched < 15 * 60e3) return;
+      clearInterval(watch);
+      update = { ...update, state: "idle", target: null, error: fresh ? (r.ok ? null : r.reason) : `the installer didn't report back; AskCharts is still on ${VERSION}` };
+      writeUpdates();
+    }, 2000);
+  } catch (e) {
+    log("runner", `update: ${e.message}`);
+    update = { ...update, state: "idle", error: e.message };
+    writeUpdates();
+  }
+}
+// what the last update downloaded is done with by the time AskCharts starts again
+fs.rmSync(path.join(dirs.updates, "next"), { recursive: true, force: true });
+writeUpdates();
+// once a day while it's on, at a random time (not every install at once), the first within the hour
+setTimeout(
+  function daily() {
+    if (readJson(UPDATES.settings)?.autoCheck !== false) checkUpdates();
+    setTimeout(daily, (23 + Math.random() * 2) * 3600e3);
+  },
+  (5 + Math.random() * 55) * 60e3,
+);
 
 function openBrowser(u) {
   const [cmd, args] = process.platform === "darwin" ? ["open", [u]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", u]] : ["xdg-open", [u]];

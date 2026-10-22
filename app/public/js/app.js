@@ -120,6 +120,7 @@ import { initPanels } from "./panels.js";
 import { DrawToolbar } from "./drawtoolbar.js";
 import { emojiPanel } from "./emojis.js";
 import { openChartSettings, CHART_DEFAULTS, THEME_KEYS, playSound } from "./chartsettings.js";
+import { watchUpdates } from "./updates.js";
 import { openSymbolSearch as openSearchDialog } from "./symbolsearch.js";
 import { IntervalMenu } from "./intervals.js";
 import { ChartTypeMenu } from "./charttypes.js";
@@ -471,6 +472,8 @@ class App {
       this.persist();
     };
     $("#settingsBtn").onclick = () => this.openSettings();
+    // a dot on the gear when a newer AskCharts is out (Settings, Updates)
+    watchUpdates($("#settingsBtn"));
   }
 
   syncToolbar() {

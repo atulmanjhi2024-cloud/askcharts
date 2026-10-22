@@ -13,6 +13,8 @@ services:
       ASKCHARTS_ORIGIN: "${ASKCHARTS_ORIGIN:?set ASKCHARTS_ORIGIN in .env, like https://charts.example.com}"
       ASKCHARTS_EMAIL: "${ASKCHARTS_EMAIL:?set ASKCHARTS_EMAIL in .env (the account that signs in)}"
       ASKCHARTS_TRUST_PROXY: "${ASKCHARTS_TRUST_PROXY:-}"
+      # the folder this was started from, so Settings, Updates can say where to update it
+      ASKCHARTS_FOLDER: "${PWD:-}"
     volumes:
       - askcharts-data:/data
 
