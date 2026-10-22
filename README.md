@@ -1,4 +1,4 @@
-# AskCharts
+# AskCharts <img src="app/public/icons/askcharts-192.png" alt="" width="36" height="36">
 
 Charts, backtests and an AI that works on the chart for you.
 
