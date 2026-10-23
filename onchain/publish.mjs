@@ -3,7 +3,8 @@
 // hour, rolled into one per day once every hour of the day is out. A chunk is only
 // written when no ledger is missing in it or at its edges, a written chunk is never changed, and every new
 // one is read back and checked the way an install checks it. Then the manifest is signed. Deploying the
-// folder is a separate step.
+// folder is a separate step. Two formats side by side from the same store (xrpl-history.mjs FORMATS): format 1
+// under xrpl/ for installs up to 0.1.12, format 2 under xrpl/v2/ with the DEX columns.
 //
 //   node onchain/publish.mjs keygen          make the signing key (once, on the publishing machine)
 //   node onchain/publish.mjs run             publish what's complete and not out yet, sign the manifest
@@ -19,7 +20,7 @@ import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { DATA, DB_FILE } from "./db.mjs";
-import { COLS, WHALE_COLS, RULES, PUBLIC_KEY, FORMAT, encodeChunk, decodeChunk, signManifest, readManifest, sha256 } from "./xrpl-history.mjs";
+import { WHALE_COLS, FORMATS, PUBLIC_KEY, encodeChunk, decodeChunk, signManifest, readManifest, sha256 } from "./xrpl-history.mjs";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== "" && v != null ? Number(v) : d);
 const HOUR = 3600,
@@ -51,23 +52,27 @@ function complete(db, a, b) {
   return { first: r.first, last: r.last };
 }
 
-function rowsOf(db, first, last) {
-  const ledgers = db.prepare(`SELECT ${COLS.join(", ")} FROM ledgers WHERE idx BETWEEN ? AND ? ORDER BY idx`).all(first, last).map((r) => COLS.map((c) => r[c]));
+// The store's rows in a format's columns. A column the store doesn't have yet (a layout 1 store, before its
+// collector updated) reads NULL: not counted.
+function rowsOf(db, first, last, f) {
+  const have = new Set(db.prepare("PRAGMA table_info(ledgers)").all().map((c) => c.name));
+  const pick = f.cols.map((c) => (have.has(c) ? c : `NULL AS ${c}`)).join(", ");
+  const ledgers = db.prepare(`SELECT ${pick} FROM ledgers WHERE idx BETWEEN ? AND ? ORDER BY idx`).all(first, last).map((r) => f.cols.map((c) => r[c]));
   const whales = db.prepare(`SELECT ${WHALE_COLS.join(", ")} FROM whales WHERE idx BETWEEN ? AND ? ORDER BY idx, hash`).all(first, last).map((r) => WHALE_COLS.map((c) => r[c]));
   return { ledgers, whales };
 }
 
 // Write one chunk (never over a different one already out), read it back as an install would, and return its
 // manifest entry.
-function writeChunk(db, dir, name, first, last) {
-  const { ledgers, whales } = rowsOf(db, first, last);
-  const buf = encodeChunk(ledgers, whales);
+function writeChunk(db, dir, name, first, last, f) {
+  const { ledgers, whales } = rowsOf(db, first, last, f);
+  const buf = encodeChunk(ledgers, whales, f);
   const file = path.join(dir, name);
   if (fs.existsSync(file)) throw new Error(`${name} is out already; a published chunk never changes`);
-  const entry = { name, first, last, ledgers: ledgers.length, from: ledgers[0][1], to: ledgers.at(-1)[1], sha256: sha256(buf), bytes: buf.length, rules: RULES };
-  const back = decodeChunk(buf, entry);
+  const entry = { name, first, last, ledgers: ledgers.length, from: ledgers[0][1], to: ledgers.at(-1)[1], sha256: sha256(buf), bytes: buf.length, rules: f.rules };
+  const back = decodeChunk(buf, entry, { format: f.format });
   const sum = (rows, k) => rows.reduce((s, r) => s + r[k], 0);
-  if (back.ledgers.length !== ledgers.length || sum(back.ledgers.map((o) => COLS.map((c) => o[c])), 3) !== sum(ledgers, 3) || back.whales.length !== whales.length)
+  if (back.ledgers.length !== ledgers.length || sum(back.ledgers.map((o) => f.cols.map((c) => o[c])), 3) !== sum(ledgers, 3) || back.whales.length !== whales.length)
     throw new Error(`${name}: read back differently`);
   put(file, buf);
   return entry;
@@ -75,8 +80,9 @@ function writeChunk(db, dir, name, first, last) {
 
 // One pass: every complete hour in the window that isn't out (as an hour or in its day), then each day whose 24
 // hours are all out rolled into one, then the manifest. Returns what it did.
-export function publish({ db, dir, key, days = 90, now = Date.now() / 1000 }) {
-  const out = path.join(dir, "xrpl");
+export function publish({ db, dir, key, days = 90, now = Date.now() / 1000, format = 1 }) {
+  const f = FORMATS[format];
+  const out = path.join(dir, f.path);
   // what's out (the manifest entries, kept beside the chunks so they needn't be read again), every name ever
   // used, and the revoked names
   const index = readJson(path.join(out, "index.json"), {});
@@ -92,7 +98,7 @@ export function publish({ db, dir, key, days = 90, now = Date.now() / 1000 }) {
   };
   const write = (stem, first, last) => {
     const name = fresh(stem);
-    index[name] = writeChunk(db, out, name, first, last);
+    index[name] = writeChunk(db, out, name, first, last, f);
     used.add(name);
     return name;
   };
@@ -130,7 +136,7 @@ export function publish({ db, dir, key, days = 90, now = Date.now() / 1000 }) {
   const chunks = Object.values(index)
     .filter((e) => e.to >= now - days * DAY)
     .sort((x, y) => x.first - y.first);
-  const { body, sig } = signManifest({ format: FORMAT, chain: "xrpl", updated: iso(Math.floor(now)), days, rules: RULES, chunks, revoked }, key);
+  const { body, sig } = signManifest({ format: f.format, chain: "xrpl", updated: iso(Math.floor(now)), days, rules: f.rules, chunks, revoked }, key);
   put(path.join(out, "manifest.json"), body);
   put(path.join(out, "manifest.json.sig"), sig);
   return { ...done, chunks: chunks.length, bytes: chunks.reduce((s, e) => s + e.bytes, 0) };
@@ -139,8 +145,8 @@ export function publish({ db, dir, key, days = 90, now = Date.now() / 1000 }) {
 // Take a published chunk back (it turned out wrong): out of the manifest, onto its revoked list, so installs
 // drop the rows it brought them. A day takes its hours with it: an install that ran through the day imported it
 // hour by hour. The next run puts the span out again under new names. The files stay (the archive).
-export function revoke(dir, name) {
-  const out = path.join(dir, "xrpl");
+export function revoke(dir, name, format = 1) {
+  const out = path.join(dir, FORMATS[format].path);
   const index = readJson(path.join(out, "index.json"), {});
   if (!index[name]) throw new Error(`${name} isn't a published chunk`);
   const revoked = readJson(path.join(out, "revoked.json"), []);
@@ -152,13 +158,13 @@ export function revoke(dir, name) {
 }
 
 // A published folder, checked the way an install checks a download: the signature, then every chunk.
-export function verify(dir, publicKey = PUBLIC_KEY) {
-  const out = path.join(dir, "xrpl");
-  const m = readManifest(fs.readFileSync(path.join(out, "manifest.json")), fs.readFileSync(path.join(out, "manifest.json.sig"), "utf8"), publicKey);
+export function verify(dir, publicKey = PUBLIC_KEY, format = 1) {
+  const out = path.join(dir, FORMATS[format].path);
+  const m = readManifest(fs.readFileSync(path.join(out, "manifest.json")), fs.readFileSync(path.join(out, "manifest.json.sig"), "utf8"), publicKey, format);
   let ledgers = 0,
     whales = 0;
   for (const e of m.chunks) {
-    const c = decodeChunk(fs.readFileSync(path.join(out, e.name)), e);
+    const c = decodeChunk(fs.readFileSync(path.join(out, e.name)), e, { format });
     ledgers += c.ledgers.length;
     whales += c.whales.length;
   }
@@ -181,16 +187,28 @@ async function main() {
   if (cmd === "run") {
     const key = crypto.createPrivateKey(fs.readFileSync(KEY_FILE));
     const db = new DatabaseSync(DB_FILE, { readOnly: true });
-    const r = publish({ db, dir: DIR, key, days: num(process.env.XRPL_PUBLISH_DAYS, 90) });
-    const status = { updated: new Date().toISOString(), ...r, incomplete: r.incomplete.slice(-48) };
+    const days = num(process.env.XRPL_PUBLISH_DAYS, 90);
+    // both formats from the same store: format 1 for installs up to 0.1.12, format 2 with the DEX columns
+    const r = publish({ db, dir: DIR, key, days });
+    const r2 = publish({ db, dir: DIR, key, days, format: 2 });
+    const status = { updated: new Date().toISOString(), ...r, incomplete: r.incomplete.slice(-48), v2: { hours: r2.hours, days: r2.days, chunks: r2.chunks, bytes: r2.bytes } };
     put(path.join(DATA, "publish-status.json"), `${JSON.stringify(status, null, 1)}\n`);
-    console.log(JSON.stringify({ ...status, hours: r.hours.length, days: r.days, incomplete: r.incomplete.length }));
+    console.log(JSON.stringify({ ...status, hours: r.hours.length, days: r.days, incomplete: r.incomplete.length, v2: { ...status.v2, hours: r2.hours.length } }));
     return;
   }
-  if (cmd === "verify") return console.log(JSON.stringify(verify(arg || DIR)));
+  if (cmd === "verify") return console.log(JSON.stringify({ format1: verify(arg || DIR), format2: verify(arg || DIR, PUBLIC_KEY, 2) }));
   if (cmd === "revoke") {
-    revoke(DIR, arg);
-    return console.log(`${arg} revoked; the next run puts its ledgers out under a new name`);
+    // a span is wrong in both formats: revoked in each that has it out
+    const where = [1, 2].filter((format) => {
+      try {
+        revoke(DIR, arg, format);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!where.length) throw new Error(`${arg} isn't a published chunk`);
+    return console.log(`${arg} revoked (format ${where.join(" and ")}); the next run puts its ledgers out under a new name`);
   }
   console.log("Usage: node onchain/publish.mjs keygen | run | revoke NAME | verify [DIR]");
   process.exitCode = 1;

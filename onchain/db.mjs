@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { place, windowOf } from "./xrpl-ledger.mjs";
+import { place, windowOf, DEX_COLS } from "./xrpl-ledger.mjs";
 
 export const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const DATA = process.env.ONCHAIN_DATA || path.join(HERE, "data");
@@ -48,9 +48,20 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS whales_idx ON whales (idx);
     CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT NOT NULL);`,
+  // 2: trading on the ledger's own exchange (.project/xrpl-dex.md; xrpl-ledger.mjs counts it). NULL on the rows
+  // stored before: not counted, which isn't the same as no trading.
+  `ALTER TABLE ledgers ADD COLUMN dex_got REAL;     -- XRP takers received from offers and pools
+    ALTER TABLE ledgers ADD COLUMN dex_paid REAL;   -- XRP takers paid to them
+    ALTER TABLE ledgers ADD COLUMN amm_got REAL;    -- of those, through AMM pools
+    ALTER TABLE ledgers ADD COLUMN amm_paid REAL;
+    ALTER TABLE ledgers ADD COLUMN dex_bridge REAL; -- XRP that only bridged two tokens
+    ALTER TABLE ledgers ADD COLUMN dex_fills INTEGER; -- offers filled
+    ALTER TABLE ledgers ADD COLUMN amm_swaps INTEGER; -- transactions that swapped with a pool
+    -- where counting began, at once (the app asks): the rows that are counted, by place on the chart
+    CREATE INDEX IF NOT EXISTS ledgers_dex_t ON ledgers (t) WHERE dex_got IS NOT NULL;`,
 ];
 export const SCHEMA = MIGRATIONS.length;
-const COLS = ["idx", "close", "res", "t", "seen", "txs", "failed", "batch", "money", "markets", "nfts", "accounts", "other", "xrp", "pays", "ex_in", "ex_out", "fees", "created"];
+const COLS = ["idx", "close", "res", "t", "seen", "txs", "failed", "batch", "money", "markets", "nfts", "accounts", "other", "xrp", "pays", "ex_in", "ex_out", "fees", "created", ...DEX_COLS];
 
 export function openDb(file = DB_FILE) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -79,7 +90,8 @@ export function saveLedger(db, { row, whales }) {
   db.exec("BEGIN");
   try {
     const keepSeen = row.seen ?? db.prepare("SELECT seen FROM ledgers WHERE idx = ?").get(row.idx)?.seen ?? null;
-    ins.run(...COLS.map((c) => (c === "t" ? row.close : c === "seen" ? keepSeen : row[c])));
+    // a row without the DEX columns (summed before they existed) leaves them NULL; the rest are NOT NULL
+    ins.run(...COLS.map((c) => (c === "t" ? row.close : c === "seen" ? keepSeen : (row[c] ?? null))));
     for (const w of whales) insW.run(w.hash, w.idx, w.src, w.dst, w.tag, w.xrp, w.src_name, w.dst_name);
     replace(db, windowOf(row), row.res);
     db.exec("COMMIT");
@@ -108,7 +120,8 @@ export function importChunk(db, ledgers, whales) {
   db.exec("BEGIN");
   try {
     for (const r of ledgers) {
-      if (!ins.run(...COLS.map((c) => (c === "t" ? r.close : c === "seen" ? null : r[c]))).changes) continue;
+      // a row without the DEX columns (the shared history's first format) leaves them NULL: not counted
+      if (!ins.run(...COLS.map((c) => (c === "t" ? r.close : c === "seen" ? null : (r[c] ?? null)))).changes) continue;
       const run = runs.at(-1);
       if (run && run[1] === r.idx - 1) run[1] = r.idx;
       else runs.push([r.idx, r.idx]);
@@ -122,6 +135,34 @@ export function importChunk(db, ledgers, whales) {
     throw e;
   }
   return runs;
+}
+
+// Shared history format 2: DEX numbers into rows this store already has but didn't count (the collector was
+// older, or the row came from format 1), never over numbers it has. Returns the runs filled ([first, last]), so a
+// revoked chunk's numbers can be taken out again.
+export function fillDex(db, ledgers) {
+  const set = DEX_COLS.map((c) => `${c} = ?`).join(", ");
+  const upd = db.prepare(`UPDATE ledgers SET ${set} WHERE idx = ? AND dex_got IS NULL`);
+  const runs = [];
+  db.exec("BEGIN");
+  try {
+    for (const r of ledgers) {
+      if (r.dex_got == null || !upd.run(...DEX_COLS.map((c) => r[c]), r.idx).changes) continue;
+      const run = runs.at(-1);
+      if (run && run[1] === r.idx - 1) run[1] = r.idx;
+      else runs.push([r.idx, r.idx]);
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+  return runs;
+}
+
+// A revoked chunk's DEX numbers out of the rows it filled (first to last): back to not counted.
+export function clearDex(db, first, last) {
+  return db.prepare(`UPDATE ledgers SET ${DEX_COLS.map((c) => `${c} = NULL`).join(", ")} WHERE idx BETWEEN ? AND ?`).run(first, last).changes;
 }
 
 // Ledgers first to last (inclusive) out, with their big payments: a revoked chunk's imported rows.

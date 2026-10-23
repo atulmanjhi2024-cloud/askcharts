@@ -6,7 +6,7 @@
 // Everything that comes in is checked as untrusted. Node only, no packages.
 import crypto from "node:crypto";
 import zlib from "node:zlib";
-import { FAMILY_OF, EXCHANGES, WHALE_MIN, RIPPLE_EPOCH } from "./xrpl-ledger.mjs";
+import { FAMILY_OF, EXCHANGES, WHALE_MIN, RIPPLE_EPOCH, DEX_COLS, DEX_RULES } from "./xrpl-ledger.mjs";
 
 export const FORMAT = 1;
 // the store's layout these rows come from (db.mjs SCHEMA when this format was made)
@@ -16,6 +16,13 @@ export const WHALE_COLS = ["hash", "idx", "src", "dst", "tag", "xrp", "src_name"
 // The counting rules (transaction families and the exchange list) as a short hash: rows counted under other
 // rules don't line up (exchange flows above all), so every chunk says which rules counted it.
 export const RULES = crypto.createHash("sha256").update(JSON.stringify([FAMILY_OF, EXCHANGES])).digest("hex").slice(0, 12);
+// Format 2 (.project/xrpl-dex.md): the same rows plus trading on the ledger's own exchange (NULL where the
+// collector didn't count it yet), published beside format 1 under xrpl/v2/: installs up to 0.1.12 read format 1
+// and refuse any other columns. Its rules hash covers the DEX rules too.
+export const FORMATS = {
+  1: { format: 1, layout: 1, cols: COLS, rules: RULES, path: "xrpl" },
+  2: { format: 2, layout: 2, cols: [...COLS, ...DEX_COLS], rules: crypto.createHash("sha256").update(JSON.stringify([FAMILY_OF, EXCHANGES, DEX_RULES])).digest("hex").slice(0, 12), path: "xrpl/v2" },
+};
 // The publisher's key (node onchain/publish.mjs keygen made it; its private half never leaves that machine).
 export const PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAuVao6f3ptGuvt1X4Ta17PiU9AGLxXDpFpfnGoLSejZA=\n-----END PUBLIC KEY-----\n";
 // Sizes an install accepts: a day is about 0.5 MB compressed and 2 MB of JSON (October 2026)
@@ -38,16 +45,16 @@ const isNum = (v, lo, hi) => typeof v === "number" && Number.isFinite(v) && v >=
 // ---------- chunks ----------
 
 // ledgers: rows in COLS order, by index, no holes; whales: rows in WHALE_COLS order
-export function encodeChunk(ledgers, whales) {
-  const json = Buffer.from(JSON.stringify({ format: FORMAT, layout: LAYOUT, rules: RULES, cols: COLS, ledgers, whaleCols: WHALE_COLS, whales }));
+export function encodeChunk(ledgers, whales, f = FORMATS[FORMAT]) {
+  const json = Buffer.from(JSON.stringify({ format: f.format, layout: f.layout, rules: f.rules, cols: f.cols, ledgers, whaleCols: WHALE_COLS, whales }));
   return zlib.brotliCompressSync(json, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: json.length } });
 }
 
 // One ledger row: whole numbers where the store has them, amounts within XRP's supply, and the counts adding up
 // the way the collector counts (every transaction is a Batch wrapper, a failed one or one of the five families).
-function checkLedger(r, now) {
-  if (!Array.isArray(r) || r.length !== COLS.length) throw bad("a ledger row has the wrong shape");
-  const o = Object.fromEntries(COLS.map((c, k) => [c, r[k]]));
+function checkLedger(r, now, f = FORMATS[FORMAT]) {
+  if (!Array.isArray(r) || r.length !== f.cols.length) throw bad("a ledger row has the wrong shape");
+  const o = Object.fromEntries(f.cols.map((c, k) => [c, r[k]]));
   if (!isInt(o.idx, 1, 1e12) || !isInt(o.close, RIPPLE_EPOCH, now + 86400) || !isInt(o.res, 1, 120)) throw bad(`ledger ${o.idx}: bad index, close time or resolution`);
   for (const c of COUNTS) if (!isInt(o[c], 0, 1e6)) throw bad(`ledger ${o.idx}: bad ${c}`);
   if (!isInt(o.fees, 0, 1e15)) throw bad(`ledger ${o.idx}: bad fees`);
@@ -55,7 +62,23 @@ function checkLedger(r, now) {
   if (o.txs !== o.failed + o.batch + o.money + o.markets + o.nfts + o.accounts + o.other) throw bad(`ledger ${o.idx}: its counts don't add up`);
   if (o.pays > o.money || o.ex_in + o.ex_out > o.xrp * (1 + 1e-9) + 1e-6) throw bad(`ledger ${o.idx}: its payments don't add up`);
   for (const c of COLS) if (INT.has(c) && !Number.isInteger(o[c])) throw bad(`ledger ${o.idx}: ${c} isn't whole`);
+  if (f.format >= 2) checkDex(o);
   return o;
+}
+
+// The DEX columns: all counted or none (NULL: not counted yet), amounts within XRP's supply, and the gross
+// amounts holding together: the AMM part within its total, the bridged part within either total (a sum of the
+// smaller of two numbers is never more than either sum). A little room for adding up floats.
+const DEX_AMOUNTS = ["dex_got", "dex_paid", "amm_got", "amm_paid", "dex_bridge"];
+const within = (a, b) => a <= b * (1 + 1e-9) + 1e-6;
+function checkDex(o) {
+  const n = DEX_COLS.filter((c) => o[c] === null).length;
+  if (n === DEX_COLS.length) return;
+  if (n) throw bad(`ledger ${o.idx}: its DEX numbers are partly missing`);
+  for (const c of DEX_AMOUNTS) if (!isNum(o[c], 0, 1e11)) throw bad(`ledger ${o.idx}: bad ${c}`);
+  for (const c of ["dex_fills", "amm_swaps"]) if (!isInt(o[c], 0, 1e6)) throw bad(`ledger ${o.idx}: bad ${c}`);
+  if (!within(o.amm_got, o.dex_got) || !within(o.amm_paid, o.dex_paid) || !within(o.dex_bridge, o.dex_got) || !within(o.dex_bridge, o.dex_paid))
+    throw bad(`ledger ${o.idx}: its DEX numbers don't add up`);
 }
 
 function checkWhale(w, first, last) {
@@ -71,7 +94,8 @@ function checkWhale(w, first, last) {
 }
 
 // A chunk as it came off the wire. expect: its manifest entry (sha256, first, last, ledgers), checked too.
-export function decodeChunk(buf, expect = {}, { maxJson = MAX_JSON, now = Date.now() / 1000 } = {}) {
+export function decodeChunk(buf, expect = {}, { maxJson = MAX_JSON, now = Date.now() / 1000, format = FORMAT } = {}) {
+  const f = FORMATS[format];
   if (!Buffer.isBuffer(buf) || buf.length > MAX_CHUNK) throw bad("a chunk is too big");
   if (expect.sha256 && sha256(buf) !== expect.sha256) throw bad("a chunk's checksum doesn't match the manifest");
   let c;
@@ -80,11 +104,11 @@ export function decodeChunk(buf, expect = {}, { maxJson = MAX_JSON, now = Date.n
   } catch {
     throw bad("a chunk isn't readable (or unpacks too big)");
   }
-  if (c?.format !== FORMAT || c.layout !== LAYOUT) throw bad("a chunk is in a format this version doesn't know");
-  if (JSON.stringify(c.cols) !== JSON.stringify(COLS) || JSON.stringify(c.whaleCols) !== JSON.stringify(WHALE_COLS)) throw bad("a chunk has other columns");
+  if (c?.format !== f.format || c.layout !== f.layout) throw bad("a chunk is in a format this version doesn't know");
+  if (JSON.stringify(c.cols) !== JSON.stringify(f.cols) || JSON.stringify(c.whaleCols) !== JSON.stringify(WHALE_COLS)) throw bad("a chunk has other columns");
   if (typeof c.rules !== "string" || !/^[0-9a-f]{12}$/.test(c.rules)) throw bad("a chunk doesn't say which rules counted it");
   if (!Array.isArray(c.ledgers) || !c.ledgers.length || !Array.isArray(c.whales)) throw bad("a chunk has no ledgers");
-  const ledgers = c.ledgers.map((r) => checkLedger(r, now));
+  const ledgers = c.ledgers.map((r) => checkLedger(r, now, f));
   ledgers.forEach((o, k) => {
     if (k && o.idx !== ledgers[k - 1].idx + 1) throw bad(`a chunk has a hole after ledger ${ledgers[k - 1].idx}`);
   });
@@ -104,7 +128,7 @@ export function signManifest(manifest, privateKey) {
   return { body, sig: `${crypto.sign(null, body, privateKey).toString("base64")}\n` };
 }
 
-export function readManifest(body, sig, publicKey = PUBLIC_KEY) {
+export function readManifest(body, sig, publicKey = PUBLIC_KEY, format = FORMAT) {
   if (!publicKey) throw bad("this version has no publisher key");
   if (!Buffer.isBuffer(body) || body.length > MAX_MANIFEST) throw bad("the manifest is too big");
   let ok = false;
@@ -115,7 +139,7 @@ export function readManifest(body, sig, publicKey = PUBLIC_KEY) {
   }
   if (!ok) throw bad("the manifest's signature doesn't check out");
   const m = JSON.parse(body);
-  if (m?.format !== FORMAT || m.chain !== "xrpl" || typeof m.updated !== "string" || !Array.isArray(m.chunks)) throw bad("the manifest is in a format this version doesn't know");
+  if (m?.format !== format || m.chain !== "xrpl" || typeof m.updated !== "string" || !Array.isArray(m.chunks)) throw bad("the manifest is in a format this version doesn't know");
   for (const e of m.chunks) {
     if (typeof e?.name !== "string" || !NAME.test(e.name)) throw bad("the manifest names a chunk oddly");
     if (!isInt(e.first, 1, 1e12) || !isInt(e.last, e.first, 1e12) || e.ledgers !== e.last - e.first + 1) throw bad(`${e.name}: bad ledger range`);

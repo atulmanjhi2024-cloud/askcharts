@@ -168,6 +168,27 @@ test('XRPL On chain: buckets into bars, share of all, big payments, and no data'
   assert.equal(I.BY_ID.xrpl_network.precisionOf({}), 0);
   assert.equal(I.BY_ID.xrpl_network.partialNewest({ show: 'Average fee (drops)' }), false);
   assert.ok(I.compute('xrpl_network', xb).error);
+  // DEX: [start, ledgers, got, paid, amm_got, amm_paid, bridge, fills, swaps, counted, last]
+  const dc = ['dex_got', 'dex_paid', 'amm_got', 'amm_paid', 'dex_bridge', 'dex_fills', 'amm_swaps', 'dex_n', 'last'];
+  const dx = { cols: dc, tf: 60, first: T - 60, whales: [], rows: [
+    [T, 4, 10, 6, 3, 1, 2, 5, 2, 4, 9], // counted whole
+    [T + 60, 3, 0, 0, 0, 0, 0, 0, 0, 0, 12], // stored before counting began
+    [T + 120, 4, 5, 1, 0, 1, 0.5, 2, 1, 2, 16], // counting began inside it
+  ] };
+  const db1 = I.compute('xrpl_dex', xb, { __onchain: dx });
+  assert.deepEqual(db1.bought, [8, NaN, 4.5, NaN, NaN, NaN]);
+  assert.deepEqual(db1.sold, [-4, NaN, -0.5, NaN, NaN, NaN]);
+  assert.deepEqual(db1.net, [4, NaN, 4, NaN, NaN, NaN]);
+  assert.deepEqual(db1.barNote, [null, null, 'counting began in this bar', null, null, null]);
+  const db2 = I.compute('xrpl_dex', xb, { show: 'Order book and AMM', __onchain: dx });
+  assert.deepEqual(db2.book, [12, NaN, 5, NaN, NaN, NaN]);
+  assert.deepEqual(db2.amm, [4, NaN, 1, NaN, NaN, NaN]);
+  assert.ok(db2.bought.every(Number.isNaN));
+  assert.deepEqual(I.compute('xrpl_dex', xb, { show: 'Bridged', __onchain: dx }).bridged, [2, NaN, 0.5, NaN, NaN, NaN]);
+  assert.deepEqual(I.BY_ID.xrpl_dex.outputsFor({}), ['bought', 'sold', 'net']);
+  assert.deepEqual(I.BY_ID.xrpl_dex.outputsFor({ show: 'Bridged' }), ['bridged']);
+  // nothing counted yet: says so
+  assert.match(I.compute('xrpl_dex', xb, { __onchain: { ...dx, rows: [dx.rows[1]] } }).error, /No DEX numbers/);
   // an outage: ledgers 6 to 9 never stored. The bar after it breaks the line, the empty bars inside it say
   // so, and the bars at its edges and a bar with a hole of its own are partial; a seconds chart's empty bar
   // (no jump) is neither

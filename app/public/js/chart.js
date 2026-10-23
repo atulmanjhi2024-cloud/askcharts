@@ -1300,7 +1300,10 @@ export class ChartPane {
   // chart's fetch stopped short of the store's start (20,000 buckets at most): the store has data there.
   onchainBefore(def) {
     const c = this.onchain?.[def.onchain];
-    return c?.first && c.from <= c.first ? `No ${def.onchain.toUpperCase()} data before ${this.onchainSince(c)}` : "";
+    // XRPL DEX counts from later than the store's start (where the collector began counting it)
+    const first = def.onchainFrom ? c?.[def.onchainFrom] : c?.first;
+    const what = def.onchainFrom === "dexFirst" ? "DEX" : def.onchain.toUpperCase();
+    return first && c.from <= first ? `No ${what} data before ${this.onchainTime(first)}` : "";
   }
 
   onchainEmptyNote(def, res, bars) {
@@ -1355,7 +1358,7 @@ export class ChartPane {
       c.rows = [...keep, ...r.buckets];
       for (const w of r.whales) c.byHash.set(w.hash, w);
       c.whales = [...c.byHash.values()].sort((a, b) => a.t - b.t);
-      Object.assign(c, { cols: r.cols, reason: r.reason, first: r.first, collector: r.collector, to: Math.max(c.to, to), error: null });
+      Object.assign(c, { cols: r.cols, reason: r.reason, first: r.first, dexFirst: r.dexFirst ?? null, collector: r.collector, to: Math.max(c.to, to), error: null });
       if (since === c.from) c.fullAt = Date.now();
     } catch (e) {
       c.error = `XRP Ledger data: ${e.message}`;
@@ -1772,7 +1775,9 @@ export class ChartPane {
               .filter((s) => !def.labelValues || s)
               .join(def.labelValues ? '<span class="lg-sep">|</span>' : " ") +
             // XRPL On chain: a bar with a hole of its own (the collector stopped or started inside it)
-            (res.gaps?.partial?.[at] ? '<span class="lg-sep">|</span><span class="muted">some ledgers missing</span>' : "");
+            (res.gaps?.partial?.[at] ? '<span class="lg-sep">|</span><span class="muted">some ledgers missing</span>' : "") +
+            // an indicator's own word on a bar (XRPL DEX: the bar its counting began in)
+            (res.barNote?.[at] ? `<span class="lg-sep">|</span><span class="muted">${esc(res.barNote[at])}</span>` : "");
       const short =
         /\(([^)]+)\)$/.exec(def.name)?.[1].split(" / ")[0] || def.name;
       // Settings, Status line: indicator titles, their inputs, values and the row background

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.13 (2026-10-23)
+
+XRPL DEX: trading on the XRP Ledger's own exchange.
+
+- XRPL DEX, a fifth On chain indicator: XRP traded on the ledger's own order book and its AMM pools in each bar,
+  seen from the taker. Show picks Buys and sells (Bought above zero, Sold below, Net as a line), Order book and
+  AMM (volume by venue) or Bridged (XRP that only passed through between two other tokens, which isn't counted as
+  bought or sold). The ? beside its name explains what counts. Alerts work on it like on the other four.
+- The XRPL collector counts it from this version on, from what each transaction did, so each trade counts once.
+  Bars from before counting began say "No DEX data before ..." rather than showing zero. With the shared history
+  on, the numbers fill in from when they were first published.
+- The shared XRPL history carries the new numbers in a second format beside the first, so installs that haven't
+  updated keep filling in as before.
+
 ## 0.1.12 (2026-10-23)
 
 Alerts on the XRPL On chain indicators.

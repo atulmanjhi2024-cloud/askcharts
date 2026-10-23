@@ -2732,6 +2732,78 @@ export const INDICATORS = [
         return { created: x.col("created"), burned: none, fee: none };
       }),
   },
+  // trading on the ledger's own exchange (.project/xrpl-dex.md): XRP bought and sold by takers through its order
+  // book and AMM pools, the same by venue, or XRP that only bridged two tokens; one view at a time (Show)
+  {
+    id: "xrpl_dex",
+    name: "XRPL DEX",
+    group: "On chain",
+    onchain: "xrpl",
+    // its numbers start where the collector began counting them, after the store's own start
+    onchainFrom: "dexFirst",
+    overlay: false,
+    volumeFormat: true,
+    labelValues: true,
+    scaleLabels: false,
+    // lines (Net, AMM) joined across bars with no ledger, the newest segment faded while that bar adds up
+    bridgeGaps: true,
+    partialNewest: () => true,
+    info: {
+      title: "XRPL DEX",
+      lead: "XRP traded on the XRP Ledger's own exchange in each bar: its order book (offers) and its AMM pools. Show, in the indicator's settings, picks the view.",
+      rows: [
+        ["bought", "XRP takers received: bought through offers or from pools"],
+        ["sold", "XRP takers paid: sold into offers or pools, drawn below zero"],
+        ["net", "Bought minus Sold. Above zero, takers bought more XRP than they sold"],
+        ["book", "XRP traded through offers on the order book, bought and sold together"],
+        ["amm", "XRP traded with AMM pools, bought and sold together"],
+        ["bridged", "XRP that only passed through as a bridge between two other tokens"],
+      ],
+      sections: [
+        [
+          "What counts",
+          [
+            "A taker is whoever's transaction crossed: an offer that filled at once, or a payment between currencies. What it received or paid in XRP counts, read from what the transaction did, so each trade counts once.",
+            "A trade between two other tokens often goes through XRP (auto bridging). That XRP is bought and sold in the same moment, so it counts as Bridged, not in Bought and Sold.",
+            "Trades between two tokens with no XRP side, offers placed but not filled, and deposits into or withdrawals from AMM pools aren't counted.",
+          ],
+        ],
+        [
+          "Reading it",
+          [
+            "Bought above Sold is takers buying XRP on the ledger itself, not on an exchange like Binance. On its own it's a hint, not a signal.",
+            "The newest bar is still adding up, so its bars are short and its lines faded until it closes.",
+            "The collector began counting these with AskCharts 0.1.13: bars before that are empty and say from when. The bar the counting began in says so.",
+          ],
+        ],
+        ["Where the numbers come from", ["AskCharts' own collector reads every validated ledger from an XRP Ledger server and stores a row for each one."]],
+      ],
+    },
+    inputs: [{ key: "show", label: "Show", type: "select", options: ["Buys and sells", "Order book and AMM", "Bridged"], default: "Buys and sells", status: false }],
+    outputs: [hist("bought", "Bought", "#089981"), hist("sold", "Sold", "#f23645"), line("net", "Net", "#b2b5be"), hist("book", "Order book", "#58a6ff"), line("amm", "AMM", "#bc8cff"), hist("bridged", "Bridged", "#d29922")],
+    // the outputs these settings compute (an alert offers only those)
+    outputsFor: (p) => (p.show === "Order book and AMM" ? ["book", "amm"] : p.show === "Bridged" ? ["bridged"] : ["bought", "sold", "net"]),
+    calc: (bars, p) =>
+      xrplCalc(bars, p, ["bought", "sold", "net", "book", "amm", "bridged"], (x) => {
+        const n = x.col("n"),
+          counted = x.col("dex_n");
+        if (!counted.some((c) => c > 0)) return { error: "No DEX numbers here yet: the XRPL collector counts trading on the ledger's own exchange from AskCharts 0.1.13 on" };
+        const got = x.col("dex_got"),
+          paid = x.col("dex_paid"),
+          ag = x.col("amm_got"),
+          ap = x.col("amm_paid"),
+          br = x.col("dex_bridge");
+        // a bar with no counted ledger is empty; amounts never dip below zero from adding up floats
+        const v = (f) => bars.map((_, j) => (counted[j] > 0 ? Math.max(0, f(j)) : NaN));
+        const none = bars.map(() => NaN);
+        // the bar the counting began in holds a short total: the legend says why
+        const barNote = bars.map((_, j) => (counted[j] > 0 && counted[j] < n[j] ? "counting began in this bar" : null));
+        if (p.show === "Order book and AMM") return { book: v((j) => got[j] + paid[j] - ag[j] - ap[j]), amm: v((j) => ag[j] + ap[j]), bought: none, sold: none, net: none, bridged: none, barNote };
+        if (p.show === "Bridged") return { bridged: v((j) => br[j]), bought: none, sold: none, net: none, book: none, amm: none, barNote };
+        const sold = v((j) => paid[j] - br[j]);
+        return { bought: v((j) => got[j] - br[j]), sold: sold.map((s) => -s), net: bars.map((_, j) => (counted[j] > 0 ? got[j] - paid[j] : NaN)), book: none, amm: none, bridged: none, barNote };
+      }),
+  },
 ];
 
 // ---------- XRPL On chain: the XRP Ledger collector's store (onchain/ beside the app) ----------

@@ -17,8 +17,13 @@ export const DEFAULT_SERVER = "wss://xrplcluster.com";
 // The columns summed per bucket, in the order each bucket's list carries them (after its start time
 // and its number of ledgers), then the bucket's last ledger (its highest index).
 export const XRPL_COLS = ["txs", "failed", "batch", "money", "markets", "nfts", "accounts", "other", "xrp", "pays", "ex_in", "ex_out", "fees", "created"];
+// Trading on the ledger's own exchange (store layout 2, .project/xrpl-dex.md), summed the same way, then how
+// many of the bucket's ledgers were counted (dex_n): rows stored before counting began are NULL and add
+// nothing, so a bucket is counted, partly counted or not at all. A store without the columns yet (the
+// collector hasn't run a version that adds them) reads NULL and 0.
+export const DEX_COLS = ["dex_got", "dex_paid", "amm_got", "amm_paid", "dex_bridge", "dex_fills", "amm_swaps"];
 // Then the first (lowest): ledger indexes run without breaks, so a jump between buckets is an outage.
-const COLS_OUT = [...XRPL_COLS, "last", "first"];
+const COLS_OUT = [...XRPL_COLS, ...DEX_COLS, "dex_n", "last", "first"];
 const MAX_BUCKETS = 50000;
 const MAX_WHALES = 3000;
 const NO_DATA = "No XRP Ledger data yet. The XRPL collector (onchain/ in the AskCharts folder) fills it in.";
@@ -36,6 +41,18 @@ function store() {
     db = null;
   }
   return db;
+}
+
+// Whether the store has the DEX columns, and the place of its first counted ledger (an index makes that
+// instant), looked at again once a minute: the collector adds the columns when it updates.
+let dex = null,
+  dexAt = 0;
+function dexOf(d) {
+  if (dex && Date.now() - dexAt < 60000) return dex;
+  dexAt = Date.now();
+  const has = d.prepare("PRAGMA table_info(ledgers)").all().some((c) => c.name === "dex_got");
+  dex = { has, first: has ? (d.prepare("SELECT MIN(t) AS t FROM ledgers WHERE dex_got IS NOT NULL").get().t ?? null) : null };
+  return dex;
 }
 
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
@@ -81,7 +98,9 @@ export function xrpl(q = {}) {
   const lo = Math.max(from, span.first - (span.first % step)),
     hi = Math.min(to, span.last + 1);
   if ((hi - lo) / step > MAX_BUCKETS) throw bad(`Too many buckets: pick a step of at least ${Math.ceil((hi - lo) / MAX_BUCKETS)} seconds`);
-  const sums = XRPL_COLS.map((c) => `SUM(${c})`).join(", ");
+  const dx = dexOf(d);
+  // every column named: a bare NULL or 0 would come back under that name, and a key like "0" sorts first
+  const sums = [...XRPL_COLS.map((c) => `SUM(${c}) AS ${c}`), ...DEX_COLS.map((c) => (dx.has ? `SUM(${c})` : "NULL") + ` AS ${c}`), `${dx.has ? "COUNT(dex_got)" : "0"} AS dex_n`].join(", ");
   // SQLite's % works on whole numbers, so the bucket's start is whole however the step is bound
   const buckets = hi > lo ? d.prepare(`SELECT t - (t % ?) AS b, COUNT(*) AS n, ${sums}, MAX(idx) AS last, MIN(idx) AS first FROM ledgers WHERE t >= ? AND t < ? GROUP BY b ORDER BY b`).all(step, lo, hi).map((r) => Object.values(r)) : [];
   const whales =
@@ -92,7 +111,7 @@ export function xrpl(q = {}) {
           .map((r) => ({ ...r }))
           .sort((a, b) => a.t - b.t)
       : [];
-  return { ...base, buckets, whales, first: span.first, last: span.last };
+  return { ...base, buckets, whales, first: span.first, last: span.last, dexFirst: dx.first };
 }
 
 // Settings, Market data: whether the collector follows the ledger, from which server, whether it fills in from

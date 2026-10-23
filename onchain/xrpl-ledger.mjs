@@ -1,6 +1,7 @@
 // One XRP Ledger ledger, summed up for the chart: transactions by family, Batch wrappers and failed ones
-// apart, XRP moved by payments, XRP into and out of known exchange wallets, fees, new accounts, and the
-// big payments one by one. Pure functions, no network, so the tests can feed them ledgers.
+// apart, XRP moved by payments, XRP into and out of known exchange wallets, fees, new accounts, XRP traded on
+// the ledger's own exchange, and the big payments one by one. Pure functions, no network, so the tests can
+// feed them ledgers.
 
 // Seconds between 1970 and the XRP Ledger's own epoch (1 January 2000).
 export const RIPPLE_EPOCH = 946684800;
@@ -48,6 +49,58 @@ export const EXCHANGES = {
 // Drops as a whole number, or null when the field isn't plain XRP (an issued currency, or "unavailable").
 const drops = (v) => (typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null);
 
+// ---- the ledger's own exchange (.project/xrpl-dex.md)
+// What a transaction did, from its metadata, seen from the taker (whoever's transaction crossed): XRP it
+// received from and paid to offers on the order book and AMM pools. An offer it filled shows its old amounts;
+// one removed unfilled (cancelled, expired, unfunded) doesn't, and isn't a trade. A pool is an account with an
+// AMM entry: its XRP moves in deposits, withdrawals, bids and votes too, which aren't trades. A trade between
+// two tokens through XRP (auto bridging) both receives and pays XRP: the smaller of the two is bridged.
+// Bump DEX_RULES when what counts changes: the shared history's rules hash carries it.
+export const DEX_RULES = 1;
+export const DEX_COLS = ["dex_got", "dex_paid", "amm_got", "amm_paid", "dex_bridge", "dex_fills", "amm_swaps"];
+const AMM_NOT_TRADES = new Set(["AMMCreate", "AMMDeposit", "AMMWithdraw", "AMMBid", "AMMVote", "AMMDelete", "AMMClawback"]);
+// one successful transaction into the ledger's running totals (drops, counts)
+function addDex(d, tx, meta) {
+  let got = 0,
+    paid = 0,
+    ammGot = 0,
+    ammPaid = 0,
+    swapped = false;
+  const pools = !AMM_NOT_TRADES.has(tx.TransactionType);
+  for (const n of meta.AffectedNodes || []) {
+    const node = n.ModifiedNode || n.DeletedNode;
+    if (!node) continue;
+    if (node.LedgerEntryType === "Offer" && node.PreviousFields) {
+      const p = node.PreviousFields,
+        f = node.FinalFields || {};
+      // an account crossing its own offer trades with nobody
+      if (f.Account === tx.Account) continue;
+      const g = drops(p.TakerGets),
+        q = drops(p.TakerPays);
+      const gave = g == null ? 0 : g - (drops(f.TakerGets) ?? 0),
+        took = q == null ? 0 : q - (drops(f.TakerPays) ?? 0);
+      if (gave > 0) got += gave;
+      if (took > 0) paid += took;
+      if (gave > 0 || took > 0) d.dex_fills++;
+    } else if (pools && n.ModifiedNode && node.LedgerEntryType === "AccountRoot" && node.FinalFields?.AMMID) {
+      const before = drops(node.PreviousFields?.Balance),
+        after = drops(node.FinalFields.Balance);
+      if (before == null || after == null || before === after) continue;
+      swapped = true;
+      if (after > before) ammPaid += after - before;
+      else ammGot += before - after;
+    }
+  }
+  got += ammGot;
+  paid += ammPaid;
+  d.dex_got += got;
+  d.dex_paid += paid;
+  d.amm_got += ammGot;
+  d.amm_paid += ammPaid;
+  d.dex_bridge += Math.min(got, paid);
+  if (swapped) d.amm_swaps++;
+}
+
 // A `ledger` response's ledger (api_version 2, or 1: the transaction's fields at the top and its
 // metadata in metaData) into one row and the big payments in it.
 export function summarize(ledger, { seen = null } = {}) {
@@ -55,7 +108,8 @@ export function summarize(ledger, { seen = null } = {}) {
   const close = Number(ledger.close_time) + RIPPLE_EPOCH;
   if (!Number.isInteger(idx) || !Number.isFinite(close)) throw new Error("Not a ledger: no index or close time");
   const row = { idx, close, res: Number(ledger.close_time_resolution) || 10, seen, txs: 0, failed: 0, batch: 0, money: 0, markets: 0, nfts: 0, accounts: 0, other: 0, xrp: 0, pays: 0, ex_in: 0, ex_out: 0, fees: 0, created: 0 };
-  const whales = [];
+  const whales = [],
+    dex = Object.fromEntries(DEX_COLS.map((c) => [c, 0]));
   for (const t of ledger.transactions || []) {
     if (typeof t !== "object") throw new Error("Ledger without its transactions expanded");
     const tx = t.tx_json || t,
@@ -73,6 +127,7 @@ export function summarize(ledger, { seen = null } = {}) {
     }
     row[FAMILY_OF[tx.TransactionType] || "other"]++;
     for (const n of meta.AffectedNodes || []) if (n.CreatedNode?.LedgerEntryType === "AccountRoot") row.created++;
+    addDex(dex, tx, meta);
     if (tx.TransactionType !== "Payment" || tx.Account === tx.Destination) continue;
     const d = drops(meta.delivered_amount ?? meta.DeliveredAmount);
     if (d == null) continue;
@@ -87,6 +142,8 @@ export function summarize(ledger, { seen = null } = {}) {
     if (xrp >= WHALE_MIN)
       whales.push({ hash: t.hash || tx.hash, idx, src: tx.Account, dst: tx.Destination, tag: Number.isInteger(tx.DestinationTag) ? tx.DestinationTag : null, xrp, src_name: from || null, dst_name: to || null });
   }
+  // summed in drops, stored in XRP like the other amounts; the counts as they are
+  for (const c of DEX_COLS) row[c] = c === "dex_fills" || c === "amm_swaps" ? dex[c] : dex[c] / 1e6;
   return { row, whales };
 }
 

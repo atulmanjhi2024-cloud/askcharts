@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { summarize, place, ranges, RIPPLE_EPOCH, FAMILY_OF, EXCHANGES } from "../xrpl-ledger.mjs";
+import { summarize, place, ranges, RIPPLE_EPOCH, FAMILY_OF, EXCHANGES, DEX_COLS } from "../xrpl-ledger.mjs";
 import { openDb, saveLedger, missing, prune, relabel, span, SCHEMA } from "../db.mjs";
 
 const BINANCE = "rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh";
@@ -134,4 +134,69 @@ test("store: prune drops old ledgers and their big payments; relabel", () => {
   assert.equal(relabel(db, EXCHANGES), 1);
   assert.equal(db.prepare("SELECT dst_name FROM whales").get().dst_name, "Kraken");
   fs.rmSync(dir, { recursive: true });
+});
+
+// The ledger's own exchange, on real transactions saved from the ledger (test/fixtures/dex-*.json), each checked
+// by hand against what the transaction asked for (its SendMax, TakerGets, TakerPays)
+const real = (name) => summarize(JSON.parse(fs.readFileSync(new URL(`./fixtures/dex-${name}.json`, import.meta.url)))).row;
+const dexOf = (row) => Object.fromEntries(DEX_COLS.map((c) => [c, row[c]]));
+const none = { dex_got: 0, dex_paid: 0, amm_got: 0, amm_paid: 0, dex_bridge: 0, dex_fills: 0, amm_swaps: 0 };
+
+test("DEX: taker's XRP paid to the order book, a part fill and a full one", () => {
+  // a payment spending at most 0.052764 XRP for a token, through one offer it partly filled
+  assert.deepEqual(dexOf(real("partial")), { ...none, dex_paid: 0.052764, dex_fills: 1 });
+  // an offer selling 1437 XRP for RLUSD: 5 XRP of it crossed at once, filling one offer completely
+  assert.deepEqual(dexOf(real("full")), { ...none, dex_paid: 5, dex_fills: 1 });
+});
+
+test("DEX: XRP received from the order book and from a pool", () => {
+  // an offer asking 0.53002 XRP for RLUSD got 0.530185 (a better price)
+  assert.deepEqual(dexOf(real("buy_book")), { ...none, dex_got: 0.530185, dex_fills: 1 });
+  // an offer asking 0.2313 XRP took it out of an AMM pool
+  assert.deepEqual(dexOf(real("buy_amm")), { ...none, dex_got: 0.2313, amm_got: 0.2313, amm_swaps: 1 });
+});
+
+test("DEX: a swap into a pool counts; a withdrawal from one doesn't", () => {
+  // a payment spending up to 5 XRP: the pool's XRP went up by 4.999997
+  assert.deepEqual(dexOf(real("amm_swap")), { ...none, dex_paid: 4.999997, amm_paid: 4.999997, amm_swaps: 1 });
+  assert.deepEqual(dexOf(real("amm_deposit")), none);
+});
+
+test("DEX: token to token through XRP is bridged, not bought and sold", () => {
+  const r = real("bridged");
+  assert.equal(r.dex_got, 0.754917);
+  assert.equal(r.dex_paid, 0.754917);
+  assert.equal(r.dex_bridge, 0.754917);
+  assert.equal(r.dex_fills, 2);
+});
+
+test("DEX: an offer removed unfilled, crossing your own offer, and a failed transaction don't count", () => {
+  assert.deepEqual(dexOf(real("cancel")), none);
+  const own = { ModifiedNode: { LedgerEntryType: "Offer", FinalFields: { Account: A, TakerGets: "1000000", TakerPays: { currency: "USD", issuer: B, value: "1" } }, PreviousFields: { TakerGets: "3000000", TakerPays: { currency: "USD", issuer: B, value: "3" } } } };
+  const other = { ModifiedNode: { ...own.ModifiedNode, FinalFields: { ...own.ModifiedNode.FinalFields, Account: B } } };
+  const row = summarize(ledger(101, 1761000040, [
+    tx({ TransactionType: "OfferCreate", Account: A }, { ...ok, AffectedNodes: [own] }),
+    tx({ TransactionType: "OfferCreate", Account: A }, { TransactionResult: "tecKILLED", AffectedNodes: [other] }),
+    tx({ TransactionType: "OfferCreate", Account: A }, { ...ok, AffectedNodes: [other] }),
+  ])).row;
+  // only the last: A took 2 XRP from B's offer
+  assert.deepEqual(dexOf(row), { ...none, dex_got: 2, dex_fills: 1 });
+});
+
+test("store layout 2: a layout 1 store gets the DEX columns, NULL on its rows; new rows are counted", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xrpl-layout-")), "x.sqlite");
+  // a layout 1 store with a ledger in it, as 0.1.12's collector left it
+  openDb(file).close();
+  const old = new DatabaseSync(file);
+  old.exec("INSERT INTO ledgers (idx, close, res, t, seen, txs, failed, batch, money, markets, nfts, accounts, other, xrp, pays, ex_in, ex_out, fees, created) VALUES (7, 1761000000, 10, 1761000000, NULL, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 12, 0)");
+  old.exec("DROP INDEX IF EXISTS ledgers_dex_t");
+  for (const c of DEX_COLS) old.exec(`ALTER TABLE ledgers DROP COLUMN ${c}`);
+  old.exec("PRAGMA user_version = 1");
+  old.close();
+  const db = openDb(file);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, SCHEMA);
+  assert.deepEqual(dexOf(db.prepare("SELECT * FROM ledgers WHERE idx = 7").get()), Object.fromEntries(DEX_COLS.map((c) => [c, null])));
+  saveLedger(db, summarize(JSON.parse(fs.readFileSync(new URL("./fixtures/dex-buy_book.json", import.meta.url)))));
+  assert.equal(db.prepare("SELECT dex_got FROM ledgers WHERE dex_got IS NOT NULL").get().dex_got, 0.530185);
 });
