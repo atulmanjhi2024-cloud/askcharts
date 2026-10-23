@@ -8,8 +8,9 @@ README.
 
 ## What you need
 
-- A Linux server with Docker and Docker Compose. 1 GB of memory is enough; 2 GB if you turn on XRPL On
-  chain. A few GB of disk, plus about 20 GB if you download Kraken's history.
+- A Linux server with Docker and Docker Compose, or without Docker (see [Without Docker](#without-docker)).
+  1 GB of memory is enough; 2 GB if you turn on XRPL On chain. A few GB of disk, plus about 20 GB if you
+  download Kraken's history.
 - A domain you control (a subdomain like `charts.yourdomain.com` is fine). Passkeys and HTTPS need one.
 - About 15 minutes.
 
@@ -118,6 +119,74 @@ if you run `chmod 600 .env`. Don't share or commit it.
 
   (The volume's name starts with your folder's name: `askcharts_` if you cloned into `askcharts`.)
 - **Sign out:** from the AskCharts logo, on each device. A session ends by itself after 7 days.
+
+## Without Docker
+
+AskCharts can also run on a server the way it runs on a computer: installed with the install line and kept
+running by systemd, with the same passkey sign in in front of it. The difference from Docker: Settings, Updates
+can update it with one click (Update now), no commands. You need a Linux server with systemd and a normal user
+account (not root).
+
+1. **Settings first.** Make the settings file before installing, so AskCharts starts with them the first time:
+
+   ```sh
+   mkdir -p ~/.config/systemd/user/askcharts.service.d
+   nano ~/.config/systemd/user/askcharts.service.d/server.conf
+   ```
+
+   Paste this, with your own address and email, then save (Ctrl+O, Enter, Ctrl+X):
+
+   ```ini
+   [Service]
+   Environment=ASKCHARTS_GATEWAY=1
+   Environment=ASKCHARTS_GATEWAY_HOST=127.0.0.1
+   Environment=ASKCHARTS_GATEWAY_PORT=3778
+   Environment=ASKCHARTS_ORIGIN=https://charts.yourdomain.com
+   Environment=ASKCHARTS_EMAIL=you@yourdomain.com
+   Environment=ASKCHARTS_TRUST_PROXY=cloudflare
+   ```
+
+   `ASKCHARTS_GATEWAY_HOST=127.0.0.1` keeps the sign in on the server itself, so only your tunnel or web server
+   reaches it. Set `ASKCHARTS_TRUST_PROXY` the way step 3 above explains: `cloudflare` for a Cloudflare tunnel,
+   `forwarded` for Caddy or nginx. The app itself listens on `127.0.0.1:3777`. If either port is taken,
+   AskCharts doesn't start and its log says which one.
+
+2. **Keep it running when you log out.** Without this, systemd stops your services when your SSH session ends:
+
+   ```sh
+   sudo loginctl enable-linger $USER
+   ```
+
+3. **Install it:**
+
+   ```sh
+   curl -fsSL https://github.com/realgrapedrop/askcharts/releases/latest/download/install.sh | ASKCHARTS_NO_OPEN=1 sh
+   ```
+
+   It puts AskCharts in `~/AskCharts` with its own Node.js and starts it. Check it with
+   `systemctl --user status askcharts`; the log is `journalctl --user -u askcharts -f`.
+
+4. **Put it online with HTTPS,** as in step 3 above, sending your address to `http://127.0.0.1:3778`. For a
+   Cloudflare tunnel without Docker, Cloudflare's dashboard shows the command that installs the tunnel on your
+   server when you create it; give the public hostname the service `http://127.0.0.1:3778`.
+
+5. **Your first passkey:**
+
+   ```sh
+   cd ~/AskCharts/program && ASKCHARTS_DATA=~/AskCharts/data ASKCHARTS_ORIGIN=https://charts.yourdomain.com ASKCHARTS_EMAIL=you@yourdomain.com ~/AskCharts/node/bin/node gateway/link.mjs
+   ```
+
+   Open the link it prints on your device within 15 minutes, as in step 4 above.
+
+Everyday, without Docker:
+
+- **Update:** Settings, Updates, then Update to the new version. Your settings file stays; so do your charts and
+  keys, in `~/AskCharts/data`.
+- **Stop and start:** `systemctl --user stop askcharts` and `systemctl --user start askcharts`.
+- **Back it up:** everything you make is in `~/AskCharts/data`. Copy that folder somewhere else, with AskCharts
+  stopped for a moment if you can.
+- **Remove it:** `~/AskCharts/uninstall`, then delete `~/.config/systemd/user/askcharts.service.d`. Your charts
+  and keys stay in `~/AskCharts/data` until you delete that folder too.
 
 ## Keep it safe
 

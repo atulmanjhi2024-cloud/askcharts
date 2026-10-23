@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.11 (2026-10-23)
+
+A server guide without Docker, and your own indicators load without a warning.
+
+- The server guide (`docs/server.md`) has a Without Docker section: the install line, a small settings file for
+  systemd, HTTPS through a Cloudflare tunnel or your own web server, your first passkey, and Update now from
+  Settings, Updates.
+- Your own indicators get a small `package.json` beside them in the data folder, so Node loads them as the ES
+  modules they are, with no warning, even when there's another `package.json` further up (in your home folder,
+  say).
+
 ## 0.1.10 (2026-10-22)
 
 XRPL Network, and an economic calendar that keeps its last good copy.

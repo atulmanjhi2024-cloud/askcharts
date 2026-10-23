@@ -72,6 +72,15 @@ fs.writeFileSync(PIDFILE, String(process.pid));
 // ---- the example indicator that comes with the app, into a new custom folder
 if (!fs.readdirSync(dirs.custom).length)
   for (const f of fs.readdirSync(path.join(HERE, "app", "custom")).filter((f) => f.endsWith(".js"))) fs.copyFileSync(path.join(HERE, "app", "custom", f), path.join(dirs.custom, f));
+// Your indicators are ES modules (export default), the way the app loads them. A package.json beside them says
+// so, or Node goes looking further up (a package.json in your home folder, say) and warns, or reads them wrong.
+// After the example's copy: that happens only into an empty folder. Yours, if there is one, stays as it is.
+const customPkg = path.join(dirs.custom, "package.json");
+try {
+  if (!fs.existsSync(customPkg)) fs.writeFileSync(customPkg, '{ "type": "module" }\n');
+} catch {
+  /* a folder AskCharts can't write to: Node still works them out, with the warning */
+}
 
 // ---- the app's port: the one asked for, or the next free one
 const free = (port, host = "127.0.0.1") =>
