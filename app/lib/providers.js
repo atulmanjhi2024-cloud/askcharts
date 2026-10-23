@@ -22,6 +22,7 @@ import {
 import * as feeds from "./feeds.js";
 import * as imports from "./imports.js";
 import * as history from "./history.js";
+import * as store from "./store.js";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -1557,22 +1558,45 @@ export async function cryptoScreener() {
   });
 }
 
+// The calendar's feed answers 429 when it's asked too often, and then every panel and chart asked again. So the
+// last good copy is kept on disk (data/calendar-cache.json) and served while the feed fails, and after a failure
+// the feed isn't asked again for a while: 15 minutes after a 429, 5 after anything else.
+let calendarWaitUntil = 0;
 export async function economicCalendar() {
   if (OFFLINE) return [];
-  return cached("calendar", 30 * 60e3, async () => {
-    const rows = await getJson(
-      "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-    );
-    mark("calendar", true);
-    return rows.map((r) => ({
-      title: r.title,
-      country: r.country,
-      date: r.date,
-      impact: r.impact,
-      forecast: r.forecast,
-      previous: r.previous,
-    }));
-  });
+  const last = () => store.read("calendar-cache", null)?.rows;
+  if (Date.now() < calendarWaitUntil) {
+    const rows = last();
+    if (rows) return rows;
+    throw upstreamError("the economic calendar is busy; trying again in a few minutes", 503);
+  }
+  try {
+    return await cached("calendar", 30 * 60e3, async () => {
+      const rows = (
+        await getJson("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+      ).map((r) => ({
+        title: r.title,
+        country: r.country,
+        date: r.date,
+        impact: r.impact,
+        forecast: r.forecast,
+        previous: r.previous,
+      }));
+      mark("calendar", true);
+      try {
+        store.write("calendar-cache", { at: new Date().toISOString(), rows });
+      } catch {
+        /* a full disk: this copy still serves until the next one */
+      }
+      return rows;
+    });
+  } catch (e) {
+    calendarWaitUntil = Date.now() + (e.status === 429 ? 15 : 5) * 60e3;
+    mark("calendar", false, e);
+    const rows = last();
+    if (rows) return rows;
+    throw e;
+  }
 }
 
 export async function probeAll() {

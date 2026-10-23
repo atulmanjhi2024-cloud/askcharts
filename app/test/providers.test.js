@@ -3,9 +3,13 @@
 // silently drops Binance cost a full timeout on every chart.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 process.env.QT_TIMEOUT_MS = "300";
+// a data folder of its own: the calendar keeps a copy there (never the real data/)
+process.env.QT_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), "qt-providers-"));
 const btc = JSON.parse(
   readFileSync(new URL("./fixtures/btc-1d.json", import.meta.url), "utf8"),
 );
@@ -38,6 +42,8 @@ globalThis.fetch = async (url, opts = {}) => {
       .map((b) => [b.time, b.low, b.high, b.open, b.close, b.volume]);
     return Response.json(rows);
   }
+  if (u.host === "nfs.faireconomy.media")
+    return Response.json([{ title: "CPI", country: "USD", date: "2026-10-23T08:30:00-04:00", impact: "High", forecast: "0.3%", previous: "0.2%" }]);
   return new Response("not mocked", { status: 404 });
 };
 const P = await import("../lib/providers.js");
@@ -83,6 +89,18 @@ test("a silently dropped host costs one timeout, then is skipped", async () => {
 test("network failures are upstream errors (the server answers 502)", async () => {
   mode = { "*": "dns" };
   await assert.rejects(P.economicCalendar(), (e) => e.upstream === true);
+});
+
+test("the calendar keeps its last good copy, serves it while the feed answers 429, and rests the feed", async () => {
+  // fresh copies of the module: the one above is resting the feed after its failure
+  mode = {};
+  assert.equal((await (await import("../lib/providers.js?calendar-good")).economicCalendar()).length, 1);
+  const C = await import("../lib/providers.js?calendar-429");
+  mode = { "nfs.faireconomy.media": 429 };
+  calls.length = 0;
+  assert.equal((await C.economicCalendar())[0].title, "CPI");
+  assert.equal((await C.economicCalendar())[0].title, "CPI");
+  assert.equal(calls.filter((h) => h === "nfs.faireconomy.media").length, 1);
 });
 
 test("the chart note for a fallback is plain words: no hostnames or HTTP codes", async () => {

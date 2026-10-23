@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.10 (2026-10-22)
+
+XRPL Network, and an economic calendar that keeps its last good copy.
+
+- XRPL Network, a fourth On chain indicator. Show picks one: New accounts (accounts created in each bar), Fees
+  burned (the XRP paid as fees, which is destroyed) or Average fee (fees over transactions, in drops; it climbs
+  when the ledger is busy). The ? beside its name explains each. The collector already stored these numbers, so
+  it works on all the XRPL history you have.
+- The economic calendar keeps its last good copy and shows it while the calendar's feed turns requests away, and
+  it waits 15 minutes after that before asking again, instead of asking on every view.
+
 ## 0.1.9 (2026-10-22)
 
 Settings, Updates remembers its last check.

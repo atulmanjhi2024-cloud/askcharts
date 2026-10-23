@@ -726,6 +726,7 @@ const REF = {
   xrpl_activity: null, // XRP Ledger data, not price: checked in indicators.test.js
   xrpl_moved: null, // the same
   xrpl_exchanges: null, // the same
+  xrpl_network: null, // the same
   zigzag: null, // checked in the Zig Zag tests below
   twap: () => ({
     value: bars.map((b) => (b.open + b.high + b.low + b.close) / 4),

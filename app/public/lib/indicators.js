@@ -2671,6 +2671,65 @@ export const INDICATORS = [
         return { in: into, out: out.map((v) => -v), net: into.map((v, k) => v - out[k]) };
       }),
   },
+  // how the ledger grows and what it costs to use: accounts created, XRP burned as fees, or the average fee;
+  // one at a time (Show), since accounts, XRP and drops don't share a scale
+  {
+    id: "xrpl_network",
+    name: "XRPL Network",
+    group: "On chain",
+    onchain: "xrpl",
+    overlay: false,
+    precision: 0,
+    // whole accounts and drops, fees in XRP to the hundredth; thousands grouped
+    precisionOf: (p) => (p.show === "Fees burned (XRP)" ? 2 : 0),
+    groupDigits: true,
+    labelValues: true,
+    // the average is a line, joined across bars with no ledger
+    bridgeGaps: true,
+    // a count or a sum is still adding up on the newest bar; an average isn't
+    partialNewest: (p) => p.show !== "Average fee (drops)",
+    info: {
+      title: "XRPL Network",
+      lead: "How the XRP Ledger grows and what it costs to use, in each bar. Show, in the indicator's settings, picks one: new accounts, the XRP burned as fees, or the average fee.",
+      rows: [
+        ["created", "Accounts created in those ledgers. An account appears when a payment sends it enough XRP to meet the ledger's reserve"],
+        ["burned", "XRP paid as transaction fees. Fees aren't paid to anyone: they're destroyed, so this XRP leaves the supply for good"],
+        ["fee", "The bar's fees over its transactions, in drops (a millionth of an XRP). The base fee is 10 drops; the average climbs when the ledger is busy and transactions pay more to get in"],
+      ],
+      sections: [
+        [
+          "How it counts",
+          [
+            "New accounts and fees add up over the ledgers that closed in the bar.",
+            "Every transaction pays its fee, failed ones too, so Fees burned and Average fee include them. A Batch's inner transactions pay nothing of their own: the wrapper pays for them.",
+          ],
+        ],
+        [
+          "Reading it",
+          [
+            "A jump in new accounts often comes from an exchange or an app making wallets in bulk, or from spam. It isn't the same as new people.",
+            "The newest bar is still adding up, so its New accounts and Fees burned bars are short until it closes. Average fee doesn't dip.",
+            "Bars missing, or a break in the Average fee line, mean the collector wasn't running for a while. The legend says so there.",
+          ],
+        ],
+        ["Where the numbers come from", ["AskCharts' own collector reads every validated ledger from an XRP Ledger server and stores a row for each one."]],
+      ],
+    },
+    // the value's own label names what's shown, so Show stays out of the legend's title
+    inputs: [{ key: "show", label: "Show", type: "select", options: ["New accounts", "Fees burned (XRP)", "Average fee (drops)"], default: "New accounts", status: false }],
+    outputs: [hist("created", "New accounts", "#26c6da"), hist("burned", "Fees burned (XRP)", "#ff7043"), line("fee", "Average fee (drops)", "#d29922")],
+    calc: (bars, p) =>
+      xrplCalc(bars, p, ["created", "burned", "fee"], (x) => {
+        const none = bars.map(() => NaN);
+        if (p.show === "Fees burned (XRP)") return { created: none, burned: x.col("fees").map((v) => v / 1e6), fee: none };
+        if (p.show === "Average fee (drops)") {
+          const fees = x.col("fees"),
+            txs = x.col("txs");
+          return { created: none, burned: none, fee: fees.map((v, i) => (txs[i] > 0 ? v / txs[i] : NaN)) };
+        }
+        return { created: x.col("created"), burned: none, fee: none };
+      }),
+  },
 ];
 
 // ---------- XRPL On chain: the XRP Ledger collector's store (onchain/ beside the app) ----------

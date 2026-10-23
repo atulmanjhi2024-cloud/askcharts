@@ -154,6 +154,20 @@ test('XRPL On chain: buckets into bars, share of all, big payments, and no data'
   assert.deepEqual(x.out, [-120, NaN, -50, NaN, NaN, NaN]);
   assert.deepEqual(x.net, [180, NaN, -50, NaN, NaN, NaN]);
   assert.ok(I.compute('xrpl_exchanges', xb).error);
+  // network: new accounts, fees burned in XRP, or the average fee in drops; one shown at a time
+  const nx = { ...d, rows: [[T, 2, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2500000, 3, 5], [T + 120, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500000, 1, 6]] };
+  const na = I.compute('xrpl_network', xb, { __onchain: nx });
+  assert.deepEqual(na.created, [3, NaN, 1, NaN, NaN, NaN]);
+  assert.ok(na.burned.every(Number.isNaN) && na.fee.every(Number.isNaN));
+  const nb = I.compute('xrpl_network', xb, { show: 'Fees burned (XRP)', __onchain: nx });
+  assert.deepEqual(nb.burned, [2.5, NaN, 0.5, NaN, NaN, NaN]);
+  assert.ok(nb.created.every(Number.isNaN));
+  const nf = I.compute('xrpl_network', xb, { show: 'Average fee (drops)', __onchain: nx });
+  assert.deepEqual(nf.fee, [250000, NaN, 100000, NaN, NaN, NaN]);
+  assert.equal(I.BY_ID.xrpl_network.precisionOf({ show: 'Fees burned (XRP)' }), 2);
+  assert.equal(I.BY_ID.xrpl_network.precisionOf({}), 0);
+  assert.equal(I.BY_ID.xrpl_network.partialNewest({ show: 'Average fee (drops)' }), false);
+  assert.ok(I.compute('xrpl_network', xb).error);
   // an outage: ledgers 6 to 9 never stored. The bar after it breaks the line, the empty bars inside it say
   // so, and the bars at its edges and a bar with a hole of its own are partial; a seconds chart's empty bar
   // (no jump) is neither
