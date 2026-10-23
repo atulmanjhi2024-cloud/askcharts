@@ -52,7 +52,11 @@ const PLACEHOLDERS = ["ticker", "exchange", "interval", "close", "open", "high",
 const PRICE_FIELDS = ["close", "open", "high", "low", "volume", "hl2", "hlc3", "ohlc4"];
 
 const shortName = (def) => /\(([^)]+)\)$/.exec(def.name)?.[1].split(" / ")[0] || def.name;
-const outputsOf = (def) => [...def.outputs.map((o) => [o.key, o.label || o.key]), ...(def.id === "supertrend" ? [["direction", "Direction"]] : [])];
+// an indicator that computes only some outputs for its settings (XRPL Network: the one Show picks) offers those
+const outputsOf = (def, params = {}) => [
+  ...def.outputs.filter((o) => !def.outputsFor || def.outputsFor(params).includes(o.key)).map((o) => [o.key, o.label || o.key]),
+  ...(def.id === "supertrend" ? [["direction", "Direction"]] : []),
+];
 const filled = (id, params) => {
   const def = BY_ID[id];
   return JSON.stringify(Object.fromEntries((def?.inputs || []).map((i) => [i.key, params?.[i.key] ?? i.default])));
@@ -64,15 +68,19 @@ const badge = (sym) => {
   return `<span class="wl-badge" style="--h:${h}">${esc((t.match(/[A-Z0-9]/i) || ["?"])[0].toUpperCase())}</span>`;
 };
 
-// The chart's indicators an alert can use. Pine scripts, indicators on another indicator, ones on
-// another interval and XRPL On chain are left out: the server can't compute those.
+// The chart's indicators an alert can use. Pine scripts, indicators on another indicator and ones on
+// another interval are left out: the server can't compute those. XRPL On chain is in: the server reads the
+// same store the chart does.
 function chartSources(p) {
   const out = [];
   for (const ind of p?.cfg.indicators || []) {
     const def = BY_ID[ind.id];
-    if (!def?.outputs?.length || String(ind.id).startsWith("pine:") || def.onchain) continue;
+    if (!def?.outputs?.length || String(ind.id).startsWith("pine:")) continue;
     if (String(ind.params?.source || "").startsWith("ind:") || (ind.tf && ind.tf !== p.cfg.tf)) continue;
-    out.push({ uid: ind.uid, id: ind.id, params: { ...(ind.params || {}) }, label: `${shortName(def)} ${p.indicatorParamsLabel(ind)}`.trim(), outs: outputsOf(def) });
+    const outs = outputsOf(def, ind.params || {});
+    // one value picked by a setting the legend doesn't show (XRPL Network's Show): the name says which
+    const which = def.outputsFor && outs.length === 1 ? `: ${outs[0][1]}` : "";
+    out.push({ uid: ind.uid, id: ind.id, params: { ...(ind.params || {}) }, label: `${shortName(def)} ${p.indicatorParamsLabel(ind)}`.trim() + which, outs });
   }
   return out;
 }
@@ -105,7 +113,7 @@ function toOperand(x, indicators = {}) {
   const s = indicators[k];
   const def = BY_ID[s?.id];
   if (!def) return { kind: "value", v: 0 };
-  return { kind: "ind", id: s.id, params: { ...(s.params || {}) }, output: out || outputsOf(def)[0][0] };
+  return { kind: "ind", id: s.id, params: { ...(s.params || {}) }, output: out || outputsOf(def, s.params || {})[0][0] };
 }
 const conditionsOf = (a) => (Array.isArray(a.conditions) && a.conditions.length ? a.conditions : [{ left: a.left, op: a.op, right: a.right }]);
 
@@ -204,7 +212,7 @@ export function openAlertDialog(app, preset = {}) {
     const s = srcFor(o),
       def = BY_ID[o.id];
     const base = s ? s.label : def ? `${shortName(def)} ${Object.values(o.params || {}).join(" ")}`.trim() : o.id;
-    const outs = def ? outputsOf(def) : [];
+    const outs = def ? outputsOf(def, o.params || {}) : [];
     return outs.length > 1 ? `${base}: ${outs.find(([k]) => k === o.output)?.[1] || o.output}` : base;
   };
   const fmtV = (v) => (Number.isFinite(Number(v)) ? String(Number(v)) : "?");
@@ -248,7 +256,7 @@ export function openAlertDialog(app, preset = {}) {
   };
   const condHtml = (c, i) => {
     const s = c.left.kind === "ind" ? BY_ID[c.left.id] : null;
-    const outs = s ? outputsOf(s) : [];
+    const outs = s ? outputsOf(s, c.left.params || {}) : [];
     let rows = `${dd("left", c.left.kind === "ind" ? (srcFor(c.left)?.label || indName(c.left)) : nameOf(c.left), i)}`;
     if (outs.length > 1) rows += dd("out", outs.find(([k]) => k === c.left.output)?.[1] || c.left.output, i);
     rows += dd("op", opLabel(c.op), i, "", opIcon(c.op));
@@ -376,7 +384,7 @@ export function openAlertDialog(app, preset = {}) {
     }
     if (x === "out") {
       const def = BY_ID[c.left.id];
-      return list(btn, outputsOf(def).map(([k, l]) => [k, esc(l)]), c.left.output, (k) => {
+      return list(btn, outputsOf(def, c.left.params || {}).map(([k, l]) => [k, esc(l)]), c.left.output, (k) => {
         c.left = { ...c.left, output: k };
         if (c.right.kind === "value" && !isMoving(c.op)) c.right = valueNear(c.left);
         render();

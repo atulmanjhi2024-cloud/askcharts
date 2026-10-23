@@ -8,6 +8,9 @@
 import crypto from "node:crypto";
 import { getCandles } from "./providers.js";
 import { conditionFn } from "../public/lib/backtest.js";
+import { BY_ID } from "../public/lib/indicators.js";
+import { parseTf } from "../public/lib/series.js";
+import * as onchain from "./onchain.js";
 import * as store from "./store.js";
 
 let alerts = store.read("alerts", []);
@@ -189,6 +192,28 @@ async function fire(a, bar, price) {
 
 // One evaluation at a time: the timer and a manual "check now" must not both fire a "once" alert.
 let running = null;
+// XRPL On chain indicators read the XRP Ledger store. The chart hands them its buckets (one per bar, an hour
+// at most, summed into longer bars); an alert gets the same buckets for its own bars, read from the store here.
+// One read per chain for every alert on those bars (`cache`).
+export function withOnchain(bars, tf, indicators = {}, cache = {}) {
+  if (!bars.length || !Object.values(indicators).some((s) => BY_ID[s?.id]?.onchain)) return indicators;
+  const sec = parseTf(tf).seconds,
+    step = Math.min(sec, 3600);
+  const data = (chain) => {
+    if (!cache[chain]) {
+      const r = onchain.xrpl({ from: bars[0].time - (bars[0].time % step), to: bars.at(-1).time + sec, step, min: 100000 });
+      cache[chain] = { cols: r.cols, rows: r.buckets, whales: r.whales, tf: sec, first: r.first, reason: r.reason };
+    }
+    return cache[chain];
+  };
+  return Object.fromEntries(
+    Object.entries(indicators).map(([k, s]) => {
+      const chain = BY_ID[s?.id]?.onchain;
+      return [k, chain ? { ...s, params: { ...(s.params || {}), __onchain: data(chain) } } : s];
+    }),
+  );
+}
+
 export function evaluate() {
   running ||= evaluateOnce().finally(() => {
     running = null;
@@ -219,11 +244,14 @@ async function evaluateOnce() {
       continue;
     }
     if (bars.length < 3) continue;
+    const chains = {};
     for (const a of group) {
       try {
-        const make = conditionFn(bars, a.indicators);
+        const make = conditionFn(bars, withOnchain(bars, tf, a.indicators, chains));
         const tests = conditionsOf(a).map((c) => make(c));
         const test = (k) => (a.match === "any" ? tests.some((t) => t(k)) : tests.every((t) => t(k)));
+        // it runs again (XRPL data arrived, say): last time's error is over
+        delete a.error;
         const i =
           a.trigger === "oncePerBarClose" ? bars.length - 2 : bars.length - 1;
         const bar = bars[i];

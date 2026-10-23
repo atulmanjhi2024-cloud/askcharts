@@ -85,9 +85,10 @@ export function resolveSeries(bars, indicators = {}, cache = {}) {
     const outKey =
       out || spec.output || BY_ID[spec.id].outputs[0]?.key || "value";
     const s = res[outKey];
+    // an indicator that couldn't run (no data for these bars, say) says why, rather than "no output"
     if (!Array.isArray(s))
       throw new Error(
-        `Indicator "${key}" (${spec.id}) has no output "${outKey}"`,
+        res.error || `Indicator "${key}" (${spec.id}) has no output "${outKey}"`,
       );
     return (i) => s[i];
   };

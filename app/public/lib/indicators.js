@@ -2718,6 +2718,8 @@ export const INDICATORS = [
     // the value's own label names what's shown, so Show stays out of the legend's title
     inputs: [{ key: "show", label: "Show", type: "select", options: ["New accounts", "Fees burned (XRP)", "Average fee (drops)"], default: "New accounts", status: false }],
     outputs: [hist("created", "New accounts", "#26c6da"), hist("burned", "Fees burned (XRP)", "#ff7043"), line("fee", "Average fee (drops)", "#d29922")],
+    // the one output these settings compute (an alert offers only that one)
+    outputsFor: (p) => [p.show === "Fees burned (XRP)" ? "burned" : p.show === "Average fee (drops)" ? "fee" : "created"],
     calc: (bars, p) =>
       xrplCalc(bars, p, ["created", "burned", "fee"], (x) => {
         const none = bars.map(() => NaN);

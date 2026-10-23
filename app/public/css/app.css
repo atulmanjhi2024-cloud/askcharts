@@ -2240,7 +2240,8 @@ body .pane .chart.dr-point, body .pane .chart.dr-point * { cursor: pointer !impo
 .ad-list button { flex-wrap: wrap; align-items: center; gap: 8px; }
 .ad-list button small { flex-basis: 100%; color: var(--muted); font-size: 12px; white-space: normal; }
 .ad-list.ad-triglist { max-width: 300px; }
-.ad-list.ad-triglist button { padding-top: 6px; padding-bottom: 6px; }
+/* each trigger has a line under its name: the item grows to hold both (menu items are 34px otherwise) */
+.ad-list.ad-triglist button { height: auto; row-gap: 2px; padding-top: 7px; padding-bottom: 7px; }
 .ad-list em { color: var(--muted); font-style: normal; }
 .ad-custom { display: flex; gap: 6px; padding: 4px 8px 6px; }
 .ad-custom .cs-num { width: auto; flex: 1; }

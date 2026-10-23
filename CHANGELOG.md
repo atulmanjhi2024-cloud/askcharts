@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.12 (2026-10-23)
+
+Alerts on the XRPL On chain indicators.
+
+- Create alert now offers XRPL Activity, XRPL Payments, XRPL Exchange flows and XRPL Network, next to price and
+  your other indicators: for example, XRP paid into exchanges above 5M in an hour, or new accounts crossing 300.
+  The alert reads the same XRP Ledger data the chart draws and keeps watching while your browser is closed. For
+  XRPL Network it watches the value its Show setting picks, and the dialog names it.
+- When an indicator has no data for the alert's bars, the alert says so in plain words.
+- The Trigger menu in Create alert is readable again: each trigger's description sits under its name instead of
+  running into the next one.
+
 ## 0.1.11 (2026-10-23)
 
 A server guide without Docker, and your own indicators load without a warning.
