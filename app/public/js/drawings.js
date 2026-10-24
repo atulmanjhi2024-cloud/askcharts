@@ -237,6 +237,9 @@ const SHAPED = new Set([
 ]);
 // TradingView's default Fibonacci levels and colours.
 const GRAY = "#787b86";
+// A table's cells and an image's box to start with, on screen (a corner drag resizes them)
+const CELL = { w: 119, h: 31 },
+  IMAGE_BOX = { w: 220, h: 130 };
 const FIB = [
   [0, GRAY], [0.236, "#f23645"], [0.382, "#ff9800"], [0.5, "#4caf50"], [0.618, "#089981"], [0.786, "#00bcd4"],
   [1, "#787b86"], [1.618, "#2962ff"], [2.618, "#f23645"], [3.618, "#9c27b0"], [4.236, "#e91e63"],
@@ -478,6 +481,9 @@ export class DrawingLayer {
       case "long":
       case "short":
         return this.positionDrag(d, orig, h);
+      case "image":
+      case "table":
+        return this.boxDrag(d, h);
       case "polyline": {
         // a closed polyline repeats its first point last: both move together
         const closed = n > 3 && orig[0].time === orig[n - 1].time && orig[0].price === orig[n - 1].price;
@@ -516,6 +522,48 @@ export class DrawingLayer {
           y = sy == null ? Y[i] + ny - Y[end] : Y[fixed] + (Y[i] - Y[fixed]) * sy;
         return { ...p, time: this.pane.timeOfLogical(l) ?? p.time, price: this.series?.coordinateToPrice(y) ?? p.price };
       });
+    };
+  }
+
+  // An image or a table by a corner, as a picture is resized: the opposite corner stays put. A picture
+  // keeps its shape; a table's cells grow or shrink with it. The top-left is the drawing's point (a
+  // bar's time), so the left edge moves a bar at a time; the other edges follow the pointer.
+  boxDrag(d, h) {
+    const p0 = d.points[0],
+      x0 = this.x(p0.time),
+      y0 = this.y(p0.price);
+    if (x0 == null || y0 == null) return null;
+    const table = d.type === "table",
+      t = d.table || { rows: 3, cols: 3, cells: [] },
+      w0 = table ? t.cols * (t.cw || CELL.w) : (d.imgSize || IMAGE_BOX).w,
+      h0 = table ? t.rows * (t.ch || CELL.h) : (d.imgSize || IMAGE_BOX).h,
+      right = x0 + w0,
+      bottom = y0 + h0,
+      left = h === 0 || h === 2,
+      top = h === 0 || h === 1,
+      ratio = !table && d.image ? h0 / w0 : 0,
+      minW = table ? t.cols * 40 : 24,
+      minH = table ? t.rows * 20 : 24,
+      ts = this.pane.chart.timeScale();
+    return (pt, at) => {
+      const px = at?.x ?? this.x(pt.time),
+        py = at?.y ?? this.y(pt.price);
+      if (px == null || py == null) return d.points;
+      let time = p0.time,
+        lx = x0;
+      if (left) {
+        // the bar nearest the pointer, but never closer than the smallest box to the right edge
+        let l = Math.round(ts.coordinateToLogical(Math.min(px, right - minW)) ?? 0);
+        if (ts.logicalToCoordinate(l) > right - minW) l -= 1;
+        time = this.pane.timeOfLogical(l) ?? p0.time;
+        lx = this.x(time) ?? x0;
+      }
+      const w = left ? right - lx : Math.max(minW, px - x0),
+        hh = ratio ? Math.max(minH, w * ratio) : Math.max(minH, top ? bottom - py : py - y0),
+        price = top ? (this.series?.coordinateToPrice(bottom - hh) ?? p0.price) : p0.price;
+      if (table) d.table = { ...t, cw: Math.round((w / t.cols) * 10) / 10, ch: Math.round((hh / t.rows) * 10) / 10 };
+      else d.imgSize = { w: Math.round(w), h: Math.round(hh) };
+      return [{ ...p0, time, price }];
     };
   }
 
@@ -1872,8 +1920,8 @@ export class DrawingLayer {
       }
       case "table": {
         // A grid of cells (3 by 3 to start) with its top-left at the click; double-click a cell to
-        // type in it. Cells keep their size on screen.
-        const st = d.style || {}, t = d.table || { rows: 3, cols: 3, cells: [] }, cw = 119, ch = 31, fs = st.fontSize || 14,
+        // type in it. Cells keep their size on screen; a corner drag resizes them.
+        const st = d.style || {}, t = d.table || { rows: 3, cols: 3, cells: [] }, cw = t.cw || CELL.w, ch = t.ch || CELL.h, fs = st.fontSize || 14,
           W = t.cols * cw, H = t.rows * ch, tc = st.textColor || themeColor("--text", "#d1d4dc");
         if (st.fill) s.boxes.push({ x: a.x, y: a.y, w: W, h: H, r: 0, fill: st.fill, fillAlpha: st.fillAlpha ?? 0.2 });
         for (let r = 0; r <= t.rows; r++) L({ x: a.x, y: a.y + r * ch }, { x: a.x + W, y: a.y + r * ch }, { width: 1 });
@@ -1955,9 +2003,9 @@ export class DrawingLayer {
         break;
       }
       case "image": {
-        // A picture with its top-left at the click, kept at its size on screen. Double-click to
-        // choose or replace it.
-        const sz = d.imgSize || { w: 220, h: 130 };
+        // A picture with its top-left at the click, kept at its size on screen (a corner drag resizes
+        // it). Double-click to choose or replace it.
+        const sz = d.imgSize || IMAGE_BOX;
         if (d.image) s.images.push({ src: d.image, x: a.x, y: a.y, w: sz.w, h: sz.h, alpha: d.style?.fillAlpha ?? 1 });
         else {
           L({ x: a.x, y: a.y }, { x: a.x + sz.w, y: a.y }, { dash: [4, 4], width: 1 });

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.14 (2026-10-23)
+
+The chart's right edge stays tight after you pick a date range, and images and tables now resize by their corners.
+
+- A date range under the chart (1D to All) now sets your zoom as well, so the next interval keeps it, the same way
+  TradingView does. Pick 1D and then 5m and you get several days of 5 minute bars with the last one next to the
+  price scale. Before, the chart went back to the zoom you had earlier and left a wide gap on the right.
+- Kraken's live feed fills a minute without trades with a flat bar and no volume, and the stored Kraken history has
+  none of those, so one chart mixed both. The live bars now leave them out too. On ATOM/USD at 1 minute that was
+  about a third of the bars when I checked. A pair with no trades at all in that window says so instead of
+  drawing a flat line.
+- Drag a corner of an image or a table to resize it, and the opposite corner stays where it is. A picture keeps
+  its shape and a table's cells grow or shrink with it. Dragging the middle still moves them.
+- When drawings are locked, pressing the one you've selected now tells you so and where to unlock it. Before,
+  the press just dragged the chart, so a locked drawing looked like it was broken.
+
 ## 0.1.13 (2026-10-23)
 
 XRPL DEX: trading on the XRP Ledger's own exchange.

@@ -636,7 +636,9 @@ async function krakenCandles(pair, tf, limit) {
     );
     if (j.error?.length) throw new Error(`Kraken: ${j.error.join(", ")}`);
     const key = Object.keys(j.result).find((k) => k !== "last");
-    const out = j.result[key].map((r) => ({
+    // A minute without trades comes back as a flat, zero volume bar. The history store (Kraken's
+    // archives) has none, so they go here too and a chart keeps one convention throughout.
+    const out = j.result[key].filter((r) => +r[6] > 0 || +r[7] > 0).map((r) => ({
       time: r[0],
       open: +r[1],
       high: +r[2],
@@ -644,6 +646,7 @@ async function krakenCandles(pair, tf, limit) {
       close: +r[4],
       volume: +r[6],
     }));
+    if (!out.length && j.result[key].length) throw new Error(`no trades in its last ${j.result[key].length} bars on ${base}`);
     mark("kraken", true);
     return base === tf ? out.slice(-limit) : resample(out, tf).slice(-limit);
   } catch (e) {

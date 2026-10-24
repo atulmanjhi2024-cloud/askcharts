@@ -253,8 +253,8 @@ export class ChartPane {
       timeScale: { ...opts.timeScale, timeVisible: true, secondsVisible: false },
     });
     this.chart.subscribeCrosshairMove((p) => this.onCrosshair(p));
-    // Your zoom is kept with the chart (as on TradingView): only a zoom you make with the wheel, a
-    // pinch or by dragging the time scale, never one the app makes (loading, ranges, Go to).
+    // Your zoom is kept with the chart (as on TradingView): a zoom you make with the wheel, a pinch, by
+    // dragging the time scale or with a date range, never one the app makes (loading, Go to).
     const touched = () => (this.zoomedAt = Date.now());
     // capture: heard before the chart library zooms and reports the change
     this.chartEl.addEventListener("wheel", touched, { passive: true, capture: true });
@@ -423,9 +423,11 @@ export class ChartPane {
     const u = this.glyphUnder(x, y, hit);
     let cls = !u ? "" : u.corner < 0 ? "dr-move" : u.corner === 0 || u.corner === 3 ? "dr-nwse" : "dr-nesw";
     if (!u) {
-      // other drawings: a handle of the selected one shows a pointer, a drawing the move cursor
+      // other drawings: a handle of the selected one shows a pointer (an image's or a table's corner the
+      // resize cursor, as an emoji's), a drawing the move cursor
       const v = this.drawingUnder(x, y, hit);
-      cls = !v ? "" : v.handle >= 0 ? "dr-point" : "dr-move";
+      const box = v?.handle >= 0 && (v.d.type === "image" || v.d.type === "table");
+      cls = !v ? "" : box ? (v.handle === 0 || v.handle === 3 ? "dr-nwse" : "dr-nesw") : v.handle >= 0 ? "dr-point" : "dr-move";
     }
     if (cls !== this.glyphCursor) {
       this.chartEl.classList.remove("dr-move", "dr-nwse", "dr-nesw", "dr-point");
@@ -503,6 +505,23 @@ export class ChartPane {
     if (hit === undefined) hit = dl.hitTest(x, y);
     return hit && !GLYPHS.has(hit.type) && !this.app.isLocked(hit) ? { d: hit, handle: -1 } : null;
   }
+  // A press on the selected drawing (a handle or its body) while it's locked pans the chart instead,
+  // which looks broken, so say why, at most every 8 seconds. Other locked drawings stay quiet: they're
+  // locked so the chart can be dragged over them.
+  lockedHint(x, y) {
+    const dl = this.drawings,
+      sel = dl.selected;
+    if (!sel || !dl.items.includes(sel) || !this.app.isLocked(sel) || this.app.tool !== "cursor" || this.replay || dl.editing) return;
+    const onHandle = (dl.handlesOf(sel) || []).some((p) => Math.hypot(p.x - x, p.y - y) <= 8);
+    if (!onHandle && dl.hitTest(x, y) !== sel) return;
+    if (Date.now() - (this.lockedHintAt || 0) < 8000) return;
+    this.lockedHintAt = Date.now();
+    this.app.toast(
+      this.app.settings.lockDrawings
+        ? "All drawings are locked. Unlock them from the lock button on the left."
+        : "This drawing is locked. Unlock it from its toolbar to move or resize it.",
+    );
+  }
   // The time and price at a spot, kept on the price pane, with the magnet as when placing a point.
   dragPoint(p) {
     const ts = this.chart.timeScale(),
@@ -517,7 +536,7 @@ export class ChartPane {
     if (e.button !== 0 || e.shiftKey || e.defaultPrevented || this.glyphDragging) return;
     const { x, y } = this.plotXY(e),
       u = this.drawingUnder(x, y);
-    if (!u) return;
+    if (!u) return this.lockedHint(x, y);
     e.preventDefault();
     e.stopPropagation();
     const dl = this.drawings,
@@ -541,7 +560,7 @@ export class ChartPane {
       if (reshape) {
         const pt = this.dragPoint(p);
         if (!pt) return;
-        pts = reshape(pt);
+        pts = reshape(pt, p);
       } else {
         const l1 = ts.coordinateToLogical(p.x);
         if (l0 == null || l1 == null) return;

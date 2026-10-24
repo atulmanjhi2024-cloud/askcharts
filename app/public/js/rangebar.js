@@ -142,6 +142,9 @@ export class RangeBar {
       need = n - 1 + m - i,
       w = ts.width();
     if (w > 0 && need * 0.5 > w) ts.applyOptions({ minBarSpacing: Math.max(0.05, (w / need) * 0.9) });
+    // The range's zoom is kept for the next interval, as on TradingView (1D, then 5m, shows about
+    // four and a half days, edge to edge), so it counts as a zoom you made.
+    p.zoomedAt = Date.now();
     ts.setVisibleLogicalRange({ from: i, to: n - 1 + m });
     // a feed with fewer bars than the range (Kraken's 720) shows what it has, and says so
     const sec = parseTf(p.cfg.tf).seconds;
