@@ -41,8 +41,9 @@ but won't tell you to buy or sell.
 
 Market data is free and needs no account or key. Crypto comes from Binance, Coinbase and Kraken. US stocks and ETFs
 come from Yahoo and Nasdaq. Forex and some futures are there too (futures about 10 minutes delayed). You can also
-download years of Kraken's own history to your computer. If you have an Alpaca or Polygon (now Massive) account, its
-key gives you live US stock prices (and CME futures, with Polygon): add it in Settings, Stock data.
+download years of history to your computer: Kraken's and Binance's for crypto, and US stocks with a free Alpaca key.
+If you have an Alpaca or Polygon (now Massive) account, its key gives you live US stock prices (and CME futures,
+with Polygon): add it in Settings, Stock data.
 
 ## What you need
 
@@ -135,6 +136,15 @@ The [quick start](docs/quick-start.md) walks through the screen: the chart, the 
 To reach AskCharts from anywhere, run it on a server with Docker. There it sits behind a sign in with a passkey,
 since the internet can reach it. The [server guide](docs/server.md) covers Docker, the sign in, HTTPS through a
 Cloudflare tunnel, your keys, and prompts you can give your own AI to walk you through it.
+
+## Architecture
+
+![How AskCharts fits together: the page, the app server, the runner, the history importers, the XRPL collector and the updater](docs/architecture.svg)
+
+AskCharts is a web page and a few plain Node programs, on your computer or your server. The page draws the charts
+and runs AskCharts AI's tools. The app server fetches market data, reads the stored history and talks to your AI
+provider with your key. A runner starts it all, keeps the history stores filled and checks for updates.
+[Architecture](docs/ARCHITECTURE.md) goes through each piece, and where your data lives.
 
 ## Privacy
 
