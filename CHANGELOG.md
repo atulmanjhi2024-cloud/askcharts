@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.21 (2026-10-24)
+
+Binance's own bars on your own computer, for BINANCE charts, from each coin's first month on Binance.
+
+- **Binance history.** Settings, Crypto data has a new BINANCE section after Kraken's. It downloads each coin's
+  bars from Binance's monthly files, every file checked against Binance's own checksum, back to the coin's first
+  month on Binance (Bitcoin from August 2017), then updates every hour from Binance. It offers the Binance coins
+  on your watchlists and your Kraken coins in USDT, takes about two minutes and 400 MB for a coin traded since
+  2017 (less for newer ones), and you can add or remove coins after. BINANCE charts and the strategy report's
+  backtests use the stored bars, with only the newest coming live from Binance. Nothing downloads until you
+  start it.
+- A first download (Kraken's, Binance's or the stocks') now shows on charts and in its CSV link as soon as it's
+  in, not a minute or two later.
+
 ## 0.1.20 (2026-10-24)
 
 Years of 1-minute stock bars on your own computer, and two open pages no longer write over each other's charts.

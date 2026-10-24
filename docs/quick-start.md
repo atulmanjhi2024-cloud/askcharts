@@ -63,10 +63,12 @@ before each change" in Settings, AskCharts AI.
   trades since 2016, with a free Alpaca key. About 85 MB and under a minute a stock.
 - **Kraken history** (Settings, Crypto data): years of Kraken's own bars for KRAKEN charts and longer
   backtests. The first download is about 10 GB.
+- **Binance history** (Settings, Crypto data): Binance's own bars for BINANCE charts, from each coin's first
+  month on Binance, every file checked. About 400 MB and two minutes for a coin traded since 2017.
 - **XRPL On chain** (Settings, On chain data): the XRP Ledger's activity for the indicators under
   Indicators, On chain. Following the ledger through a public server is about 15 GB of downloads a day.
 
-All three start off, and nothing big downloads until you turn it on.
+All four start off, and nothing big downloads until you turn it on.
 
 - **Your own data keys (optional):** if you have an Alpaca or Polygon (now Massive) account, paste its key in
   Settings, Stock data and press Save and check. AskCharts asks the provider first and only saves a key

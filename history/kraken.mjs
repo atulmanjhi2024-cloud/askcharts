@@ -25,8 +25,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, seriesId, sourceId, upsertBars, replaceRange, lastTime, getState, setState, aggregate, writeJson, readJson, DATA, HERE, DB_FILE, STATUS_FILE, SETTINGS_FILE, JOBS_DIR, SCHEMA } from "./db.mjs";
-// the store's other writer: US stocks from Alpaca (Settings, Stock data), run from here under the same lock
+// the store's other writers, run from here under the same lock: US stocks from Alpaca (Settings, Stock data)
+// and Binance's coins (Settings, Crypto data)
 import * as alpaca from "./alpaca.mjs";
+import * as binance from "./binance.mjs";
 
 const RAW = path.join(DATA, "raw", "kraken");
 const API = "https://api.kraken.com/0/public";
@@ -773,19 +775,20 @@ export async function jobs(db) {
     const file = path.join(JOBS_DIR, files[0]);
     const job = readJson(file, null);
     fs.rmSync(file, { force: true });
-    // the Stock data page's requests: the stock history's own, with its own names and results
-    if (job?.source === "alpaca") {
+    // the stock history's and Binance's requests, with their own names and results
+    const other = { alpaca, binance }[job?.source];
+    if (other) {
       let ok = true,
         message;
       try {
-        log(`stock job ${job.cmd}${job.symbol ? ` ${job.symbol}` : ""}`);
-        message = await alpaca.job(db, job);
+        log(`${job.source} job ${job.cmd}${job.symbol || job.pair ? ` ${job.symbol || job.pair}` : ""}`);
+        message = await other.job(db, job);
       } catch (e) {
         ok = false;
         message = e.message;
-        log(`stock job ${job.cmd}: ${e.message}`);
+        log(`${job.source} job ${job.cmd}: ${e.message}`);
       }
-      status((s) => ((s.alpaca ||= {}).lastJob = { cmd: job.cmd, symbol: job.symbol, at: iso(), ok, message }));
+      status((s) => ((s[job.source] ||= {}).lastJob = { cmd: job.cmd, symbol: job.symbol, pair: job.pair, at: iso(), ok, message }));
       continue;
     }
     let ok = true,
@@ -888,12 +891,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     if (cmd === "bulk") await bulk(db, chosen, flags.has("--force"));
     else if (cmd === "update") {
       await update(db, chosen, { now: flags.has("--now") });
-      // the stock history too, on its own Automatic (nothing to do while it's off)
+      // the stock history and Binance's too, each on its own Automatic (nothing to do while it's off)
       if (!named.length)
-        await alpaca.update(db, { now: flags.has("--now") }).catch((e) => {
-          log(`stocks: ${e.message}`);
-          process.exitCode = 1;
-        });
+        for (const [name, other] of [["stocks", alpaca], ["Binance", binance]])
+          await other.update(db, { now: flags.has("--now") }).catch((e) => {
+            log(`${name}: ${e.message}`);
+            process.exitCode = 1;
+          });
     }
     else if (cmd === "jobs") await jobs(db);
     else if (cmd === "add") await addPair(db, named[0]);

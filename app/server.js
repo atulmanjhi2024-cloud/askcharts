@@ -457,10 +457,11 @@ async function handle(req, res) {
     // come back in. A plain GET (no x-qt needed): a <a download> link, not a fetch, serves it.
     if (p === "/api/history/export" && req.method === "GET") {
       const pair = String(q.pair || "").trim().toUpperCase();
-      // a stored stock (Settings, Stock data) or a Kraken coin (Crypto data)
-      const stock = q.exchange === "US";
-      if (stock ? !/^[A-Z][A-Z0-9.]{0,9}$/.test(pair) : !/^[A-Z0-9]{2,20}$/.test(pair)) return send(res, 400, { error: stock ? "Use the stock's ticker, like AAPL" : "Use Kraken's name for the pair, like XRPUSD" });
-      const exp = history.exportSeries(stock ? "US" : "KRAKEN", pair);
+      // a stored stock (Settings, Stock data), a Binance coin or a Kraken one (Crypto data)
+      const stock = q.exchange === "US",
+        exchange = stock ? "US" : q.exchange === "BINANCE" ? "BINANCE" : "KRAKEN";
+      if (stock ? !/^[A-Z][A-Z0-9.]{0,9}$/.test(pair) : !/^[A-Z0-9]{2,20}$/.test(pair)) return send(res, 400, { error: stock ? "Use the stock's ticker, like AAPL" : `Use ${exchange === "BINANCE" ? "Binance" : "Kraken"}'s name for the pair, like ${exchange === "BINANCE" ? "BTCUSDT" : "XRPUSD"}` });
+      const exp = history.exportSeries(exchange, pair);
       if (!exp) return send(res, 404, { error: `${pair} isn't stored on this computer` });
       let gone = false;
       res.on("close", () => (gone = true));

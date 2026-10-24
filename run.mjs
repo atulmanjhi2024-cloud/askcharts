@@ -200,7 +200,7 @@ if (GATEWAY) {
     );
 }
 
-// ---- Kraken's history and the stock history: requests from Settings, Crypto data and Stock data at once, the
+// ---- Kraken's, Binance's and the stock history: requests from Settings, Crypto data and Stock data at once, the
 // hourly update (each does nothing while its Automatic is off). One at a time: the importer waits for its own
 // lock anyway. The stock history reads the Alpaca key from the app's feeds.json when it runs.
 const histEnv = { ...base, HISTORY_DATA: dirs.history, FEEDS_FILE: path.join(dirs.app, "feeds.json") };
@@ -213,12 +213,12 @@ setInterval(() => {
     /* no requests yet */
   }
 }, 5000);
-// the hourly update only while an Automatic is on (Kraken's or the stocks'): off, there's nothing to do and no
-// store to open
+// the hourly update only while an Automatic is on (Kraken's, the stocks' or Binance's): off, there's nothing to
+// do and no store to open
 const automatic = () => {
   try {
     const s = JSON.parse(fs.readFileSync(path.join(dirs.history, "settings.json"), "utf8"));
-    return s.kraken?.automatic === true || s.alpaca?.automatic === true;
+    return s.kraken?.automatic === true || s.alpaca?.automatic === true || s.binance?.automatic === true;
   } catch {
     return false;
   }

@@ -165,14 +165,23 @@ function queued() {
 const jobsOff = () => process.env.QT_HISTORY_JOBS === "off";
 
 // Everything the Crypto data page shows: the importer's status.json, the settings, the waiting requests.
+let seenRun = null;
 export function status() {
   const st = readJson(STATUS, {}),
     set = readJson(SETTINGS, null);
+  // the importer wrote since: a store or a symbol it just downloaded charts now, not a minute later
+  if (st.updatedAt !== seenRun) {
+    seenRun = st.updatedAt;
+    lists.clear();
+    if (!db) openedAt = 0;
+  }
   const k = st.kraken || {},
-    a = st.alpaca || {};
+    a = st.alpaca || {},
+    b = st.binance || {};
   // a job whose importer has gone (a crash, a restart of the box) isn't running any more
   if (k.job && !(k.job.pid && alive(k.job.pid))) k.job = null;
   if (a.job && !(a.job.pid && alive(a.job.pid))) a.job = null;
+  if (b.job && !(b.job.pid && alive(b.job.pid))) b.job = null;
   return {
     available: existsSync(FILE),
     updatedAt: st.updatedAt ?? null,
@@ -181,6 +190,8 @@ export function status() {
     kraken: { ...k, pairs: k.pairs || {}, coins: set?.kraken?.pairs ?? Object.keys(k.pairs || {}), automatic: set?.kraken?.automatic ?? k.automatic ?? configAutomatic() },
     // Settings, Stock data: US stocks from Alpaca (history/alpaca.mjs), off until downloaded
     alpaca: { ...a, symbols: a.symbols || {}, list: set?.alpaca?.symbols ?? [], automatic: set?.alpaca?.automatic ?? false },
+    // Settings, Crypto data: Binance's coins (history/binance.mjs), off until downloaded
+    binance: { ...b, pairs: b.pairs || {}, list: set?.binance?.pairs ?? [], automatic: set?.binance?.automatic ?? false },
     queued: queued(),
     jobs: !jobsOff(),
   };
@@ -228,9 +239,27 @@ function stockJob(body) {
   if (cmd === "automatic") job.on = body.on === true;
   return job;
 }
+// Binance's coins, by Binance's own names (BTCUSDT), for the Crypto data page's requests (source "binance").
+function binanceJob(body) {
+  const cmd = String(body?.cmd || "");
+  if (!STOCK_CMDS.has(cmd)) throw bad("Not a Crypto data action");
+  const job = { source: "binance", cmd, at: new Date().toISOString() };
+  const name = (x) => String(x || "").trim().toUpperCase();
+  if (cmd === "add" || cmd === "remove") {
+    job.pair = name(body.pair);
+    if (!/^[A-Z0-9]{2,20}$/.test(job.pair)) throw bad("Use Binance's name for the pair, like BTCUSDT");
+  }
+  if (cmd === "start") {
+    job.pairs = [...new Set((Array.isArray(body.pairs) ? body.pairs : []).map(name))].slice(0, 50);
+    if (!job.pairs.length || !job.pairs.every((p) => /^[A-Z0-9]{2,20}$/.test(p))) throw bad("Pick at least one coin, by Binance's name, like BTCUSDT");
+  }
+  if (cmd === "automatic") job.on = body.on === true;
+  return job;
+}
 export function requestJob(body) {
   if (jobsOff()) throw Object.assign(new Error("This copy reads the history store read only. Its actions run on the copy that keeps the store."), { status: 403 });
   if (body?.source === "alpaca") return queueJob(stockJob(body));
+  if (body?.source === "binance") return queueJob(binanceJob(body));
   const cmd = String(body?.cmd || "");
   if (!JOB_CMDS.has(cmd)) throw bad("Not a Crypto data action");
   const job = { cmd, at: new Date().toISOString() };

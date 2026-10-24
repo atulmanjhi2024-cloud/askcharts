@@ -7,6 +7,7 @@ import { marketData } from "./marketdata.js";
 import { onchainData } from "./onchaindata.js";
 import { dataKeys } from "./datakeys.js";
 import { stockHistory } from "./stockhistory.js";
+import { binanceHistory } from "./binancehistory.js";
 import { PRODUCTS } from "./products.js";
 import { updatesPage } from "./updates.js";
 import { PALETTE, rgbOf, hexOf, cssOf, lineIcon, STYLES } from "./drawtoolbar.js";
@@ -372,6 +373,12 @@ export function openChartSettings(app, chartTypes, start) {
   dk.load().then(() => {
     if (tab === "keys" && page.isConnected) redraw();
   });
+  // Crypto data's Binance section, read every few seconds while the tab is open
+  const bh = binanceHistory(app);
+  let bhStale = false;
+  bh.load().then(() => {
+    if (tab === "market" && page.isConnected) redraw();
+  });
   const sh = stockHistory(app);
   let shStale = false;
   sh.load().then(() => {
@@ -389,6 +396,15 @@ export function openChartSettings(app, chartTypes, start) {
     // a change that arrives while a coin is being typed waits until the typing stops
     if (mdStale && tab === "market" && page.isConnected && !md.typing(page)) {
       mdStale = false;
+      redraw();
+    }
+  }, 4000);
+  const bhPoll = setInterval(async () => {
+    if (!page.isConnected) return clearInterval(bhPoll);
+    if (tab !== "market" || document.hidden) return;
+    if (await bh.load()) bhStale = true;
+    if (bhStale && tab === "market" && page.isConnected && !bh.typing(page) && !md.typing(page)) {
+      bhStale = false;
       redraw();
     }
   }, 4000);
@@ -602,7 +618,7 @@ export function openChartSettings(app, chartTypes, start) {
       return ai.html();
     },
     market() {
-      return md.html();
+      return `${md.html()}${bh.html()}<div class="cs-sec">OTHER EXCHANGES</div><div class="md-wrap"><p class="ai-lead">Coinbase isn't stored yet: its charts use its own feed, up to 20,000 bars.</p></div>`;
     },
     onchain() {
       return oc.html();
@@ -654,7 +670,10 @@ export function openChartSettings(app, chartTypes, start) {
     page.innerHTML = `<div class="cs-grid">${PAGES[t]()}</div>`;
     page.scrollTop = top;
     if (t === "ai") ai.bind(page, redraw);
-    if (t === "market") md.bind(page, redraw);
+    if (t === "market") {
+      md.bind(page, redraw);
+      bh.bind(page, redraw);
+    }
     if (t === "onchain") oc.bind(page, redraw);
     if (t === "keys") {
       dk.bind(page, redraw);

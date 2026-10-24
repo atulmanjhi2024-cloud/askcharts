@@ -1089,7 +1089,7 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
   limit = Math.min(asked, 20000);
   const sym = await resolve(rawSymbol);
   // a symbol the history store holds can give far more bars than an exchange's API
-  const stored = ["KRAKEN", "US"].includes(sym.exchange) && parseTf(tf).seconds >= 60 && history.covers(sym.exchange, sym.ticker);
+  const stored = ["KRAKEN", "US", "BINANCE"].includes(sym.exchange) && parseTf(tf).seconds >= 60 && history.covers(sym.exchange, sym.ticker);
   if (stored) limit = Math.min(asked, history.MAX_BARS);
   if (sym.exchange === "SPREAD") return spreadCandles(sym, tf, limit);
   // Your own imported bars (data/imports/<NAME>.csv).
@@ -1109,8 +1109,20 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
     const t = sym.ticker;
     const notes = [],
       kraken = {};
-    let chain, stocks;
-    if (sym.exchange === "BINANCE") {
+    let chain, held;
+    // A store that holds the symbol keeps its bars, and the live source fills in only from its last bar (that
+    // bar too: it may have been stored unfinished), asking for just that stretch.
+    const fromStore = (exchange, label, where) => {
+      const st = history.bars(exchange, t, tf, limit);
+      const cut = st?.candles.length ? st.candles.at(-1).time : null;
+      if (cut != null) held = { st, cut, label, where };
+      return cut == null ? limit : Math.min(limit, Math.ceil((Date.now() / 1000 - cut) / parseTf(tf).seconds) + 10);
+    };
+    if (sym.exchange === "BINANCE" && stored) {
+      // Binance's own bars (Settings, Crypto data); no other exchange's bars after them
+      const want = fromStore("BINANCE", "Binance's own bars", "Settings, Crypto data");
+      chain = [["Binance", () => binanceCandles(t, tf, want)]];
+    } else if (sym.exchange === "BINANCE") {
       const { base, quote } = cryptoParts(t);
       const usdQuote = ["USDT", "USDC", "FDUSD", "USD"].includes(quote);
       chain = [["Binance", () => binanceCandles(t, tf, limit)]];
@@ -1147,12 +1159,8 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
         ["Yahoo (delayed)", () => yahooCandles(FUTURES[root].yahoo, tf, limit)],
       ]);
     } else if (sym.exchange === "US") {
-      // The stock history (Settings, Stock data) holds the whole market's bars to about an hour ago: they stay,
-      // and the live sources fill in only from its last bar (that bar too: it may have been stored unfinished).
-      const st = stored ? history.bars("US", t, tf, limit) : null;
-      const cut = st?.candles.length ? st.candles.at(-1).time : null;
-      const want = cut == null ? limit : Math.min(limit, Math.ceil((Date.now() / 1000 - cut) / parseTf(tf).seconds) + 10);
-      if (cut != null) stocks = { st, cut };
+      // The stock history (Settings, Stock data) holds the whole market's bars to about an hour ago
+      const want = stored ? fromStore("US", "The whole market's bars from Alpaca", "Settings, Stock data") : limit;
       // Your own keys (data/feeds.json) go first; the public sources stay behind them.
       chain = feeds.stockChain(t, tf, want).concat(isIntraday(tf)
         ? [
@@ -1170,17 +1178,17 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
     try {
       res = await tryChain(chain);
     } catch (e) {
-      // the stored stock bars still chart when no live source answers
-      if (!stocks) throw e;
-      res = { candles: [], provider: "the stock history", fallbacks: [] };
+      // the stored bars still chart when no live source answers
+      if (!held) throw e;
+      res = { candles: [], provider: "the history on this computer", fallbacks: [] };
     }
-    if (stocks) {
-      const { st, cut } = stocks;
+    if (held) {
+      const { st, cut, label, where } = held;
       const tail = res.candles.filter((b) => b.time >= cut);
       if (tail.length && tail[0].time - cut > Math.max(3 * parseTf(tf).seconds, 4 * 86400))
-        notes.push(`The stock history on this computer ends ${utcTime(cut)}, so this chart skips from there to ${utcTime(tail[0].time)}. It fills in with the next update (Settings, Stock data).`);
+        notes.push(`The history on this computer ends ${utcTime(cut)}, so this chart skips from there to ${utcTime(tail[0].time)}. It fills in with the next update (${where}).`);
       res.candles = [...st.candles.filter((b) => b.time < cut), ...tail].slice(-limit);
-      kraken.source = [`The whole market's bars from Alpaca, stored on this computer: ${utcDay(st.candles[0].time)} to ${utcDay(cut)}.`, tail.length ? `The newest: live from ${res.provider}.` : "No live source is answering, so the chart stops at the stored bars."].join("\n");
+      kraken.source = [`${label}, stored on this computer: ${utcDay(st.candles[0].time)} to ${utcDay(cut)}.`, tail.length ? `The newest: live from ${res.provider}.` : "No live source is answering, so the chart stops at the stored bars."].join("\n");
     }
     // Plain words on the chart; the technical reason stays in the server log and /api/health.
     const keyFails = res.fallbacks.filter((f) => feeds.isKeyProvider(f));
@@ -1207,7 +1215,7 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
       );
     if (res.provider === "Alpaca (IEX)")
       notes.push(
-        stocks
+        held
           ? "Stored bars are the whole market's; the newest come live from your Alpaca key on the free IEX feed, where volume counts IEX trades only."
           : "Live from your Alpaca key on the free IEX feed: prices are live, volume counts IEX trades only.",
       );

@@ -142,9 +142,7 @@ export function marketData() {
         h += `<div class="md-add"><input class="cs-num ai-in" data-md="pair" list="md-pairs" placeholder="Add a coin: Kraken's name, like ATOMUSD or XRPEUR" autocomplete="off" spellcheck="false" value="${esc(st.add)}"><datalist id="md-pairs">${opts}</datalist><button class="btn" data-md="add">Add coin</button></div>`;
         h += `<div class="ai-sub md-tight">Kraken's archive has every coin from its first trade. Adding one takes about a minute, then its trades since the archive, at Kraken's pace (an hour or more for a busy coin).</div>`;
       }
-      h += "</div>";
-      h += '<div class="cs-sec">OTHER EXCHANGES</div>';
-      h += `<div class="md-wrap"><p class="ai-lead">Binance and Coinbase aren't stored yet: their charts use each exchange's own feed, up to 20,000 bars.</p>`;
+      // Binance's section and the note on other exchanges follow, from Settings (chartsettings.js)
       h += `<p class="ai-note">Actions here start right away; Cancel doesn't undo them. Removing a coin deletes its bars and shrinks the store file, which needs about twice the store's size free for a moment.</p></div>`;
       return h;
     },

@@ -123,7 +123,7 @@ Without any keys, the charts, data and everything else still work. Only AskChart
    a 50 period moving average".
 4. **More history (optional).** Settings, Stock data downloads years of 1-minute bars for your US stocks
    (with the free Alpaca key, about 85 MB a stock), Settings, Crypto data downloads Kraken's full history
-   (about 10 GB), and Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger
+   (about 10 GB) and Binance's (about 400 MB a coin), and Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger
    through a public server, which is about 15 GB of downloads a day. When it starts it also fills in up to 90
    days of history from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't
    empty. Each only downloads, and you can switch each off in the same place.
