@@ -13,7 +13,12 @@ const STATUS = path.join(path.dirname(FILE), "xrpl-status.json");
 // On or off, and which server (Settings, Market data): AskCharts' runner reads it and starts or stops
 // the collector (onchain/xrpl.mjs).
 const SETTINGS = path.join(path.dirname(FILE), "settings.json");
-export const DEFAULT_SERVER = "wss://xrplcluster.com";
+// Ripple's public server: xrplcluster.com's free allowance is less than a ledger with its transactions every
+// few seconds, so following every ledger there falls behind
+export const DEFAULT_SERVER = "wss://s1.ripple.com";
+// the default before 0.1.16, which turning XRPL on wrote into the settings: read as no choice made
+const OLD_DEFAULT = "wss://xrplcluster.com";
+const serverOf = (s) => (s.server && s.server !== OLD_DEFAULT ? s.server : DEFAULT_SERVER);
 // The columns summed per bucket, in the order each bucket's list carries them (after its start time
 // and its number of ledgers), then the bucket's last ledger (its highest index).
 export const XRPL_COLS = ["txs", "failed", "batch", "money", "markets", "nfts", "accounts", "other", "xrp", "pays", "ex_in", "ex_out", "fees", "created"];
@@ -69,7 +74,13 @@ function collector() {
     const s = JSON.parse(fs.readFileSync(STATUS, "utf8"));
     const h = s.history;
     return {
+      // the server it's on (its host), and why it last failed: the page says it in plain words
+      server: s.server || null,
       connected: !!s.connected,
+      connectedAt: s.connectedAt || null,
+      lastError: s.lastError || null,
+      lastErrorAt: s.lastErrorAt || null,
+      limited: s.limited?.until ? { until: s.limited.until, message: s.limited.message || "" } : null,
       behind: s.behind ?? null,
       toFill: s.toFill ?? null,
       updated: s.updated || null,
@@ -127,18 +138,20 @@ export function settings() {
   const s = saved();
   const d = store();
   const span = d ? d.prepare("SELECT MIN(t) AS first, MAX(t) AS last, COUNT(*) AS n FROM ledgers").get() : null;
-  return { enabled: s.enabled === true, server: s.server || DEFAULT_SERVER, history: s.history !== false, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null };
+  return { enabled: s.enabled === true, server: serverOf(s), history: s.history !== false, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null };
 }
 
 export function saveSettings(body = {}) {
-  const enabled = body.enabled === true;
-  const server = String(body.server ?? DEFAULT_SERVER).trim() || DEFAULT_SERVER;
-  // left out (the on/off switch, the server): kept as it was
-  const history = typeof body.history === "boolean" ? body.history : saved().history !== false;
-  if (server.length > 200 || !/^wss?:\/\/[^\s/]+(\/[^\s]*)?$/.test(server)) throw bad("The server is a WebSocket address, like wss://xrplcluster.com");
+  const enabled = body.enabled === true,
+    now = saved();
+  // left out (the on/off switch, the history switch): kept as it was. A server is written only when one is
+  // given, so turning XRPL on doesn't fix today's default in place.
+  const server = body.server == null ? now.server || null : String(body.server).trim() || null;
+  const history = typeof body.history === "boolean" ? body.history : now.history !== false;
+  if (server && (server.length > 200 || !/^wss?:\/\/[^\s/]+(\/[^\s]*)?$/.test(server))) throw bad("The server is a WebSocket address, like wss://s1.ripple.com");
   fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
   const tmp = `${SETTINGS}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ enabled, server, history }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(tmp, JSON.stringify({ enabled, ...(server ? { server } : {}), history }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, SETTINGS);
   return settings();
 }

@@ -8,6 +8,23 @@ import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "history-test-"));
 process.env.HISTORY_DATA = tmp;
+// Kraken's archive host, played locally (HEAD, GET, ranges): the importer reads KRAKEN_FILES when it loads
+const http = await import("node:http");
+const served = new Map(),
+  gets = [];
+const kraken = http.createServer((req, res) => {
+  const name = decodeURIComponent(new URL(req.url, "http://x").pathname.slice(1)),
+    body = served.get(name);
+  if (!body) return res.writeHead(404).end();
+  if (req.method === "HEAD") return res.writeHead(200, { "content-length": body.length }).end();
+  gets.push(name);
+  const m = /^bytes=(\d+)-$/.exec(req.headers.range || "");
+  if (m) return res.writeHead(206, { "content-length": body.length - +m[1], "content-range": `bytes ${m[1]}-${body.length - 1}/${body.length}` }).end(body.subarray(+m[1]));
+  res.writeHead(200, { "content-length": body.length }).end(body);
+});
+await new Promise((r) => kraken.listen(0, "127.0.0.1", r));
+kraken.unref();
+process.env.KRAKEN_FILES = `http://127.0.0.1:${kraken.address().port}`;
 const db = await import("../db.mjs");
 const k = await import("../kraken.mjs");
 
@@ -172,5 +189,62 @@ test("removing a coin shrinks the store when it's worth it and the disk has room
   assert.equal(d.prepare("SELECT COUNT(*) AS n FROM series WHERE symbol = 'AAAUSD'").get().n, 0);
   assert.equal(d.prepare("PRAGMA quick_check").get().quick_check, "ok");
   d.close();
+});
+
+test("the last whole quarter in Kraken's archive, from its manifest's end date", () => {
+  assert.equal(k.quarterEnding("2026-09-30"), "2026Q3");
+  assert.equal(k.quarterEnding("2026-03-31"), "2026Q1");
+  assert.equal(k.quarterEnding("2026-12-31"), "2026Q4");
+  assert.equal(k.quarterEnding("2026-08-15"), "2026Q2"); // partway through Q3: Q3 is left to its own file
+  assert.equal(k.quarterEnding("2026-02-10"), "2025Q4");
+  assert.equal(k.quarterEnding("soon"), null);
+});
+
+// A fresh install's first download: Kraken's Full archive in parts, each checked against Kraken's SHA-256,
+// joined, tested, and only then put where the importer reads archives. A part that doesn't match goes and
+// comes again; a part that's already whole isn't fetched twice.
+test("the first download: Kraken's archive in parts, checked, joined and tested; a bad part comes again", async () => {
+  const { createHash } = await import("node:crypto");
+  const zip = fs.readFileSync(new URL("./fixtures/kraken-mini.zip", import.meta.url));
+  const cut = Math.floor(zip.length / 2),
+    parts = [zip.subarray(0, cut), zip.subarray(cut)];
+  const name = (i) => `Kraken_OHLCVT_Full.zip.part0${i}`;
+  const sums = parts.map((b, i) => `${createHash("sha256").update(b).digest("hex")}  ${name(i)}`).join("\n") + "\n";
+  served.set("OHLCVT_Full_PARTS_SHA256SUMS.txt", Buffer.from(sums));
+  served.set(name(0), parts[0]);
+  // the second part arrives damaged: refused, removed, nothing joined
+  const bad = Buffer.from(parts[1]);
+  bad[3] ^= 0xff;
+  served.set(name(1), bad);
+  const raw = path.join(tmp, "raw", "kraken");
+  await assert.rejects(k.fullArchive(), /part01 didn't match Kraken's checksum/);
+  assert.deepEqual(fs.readdirSync(raw).sort(), [name(0)]);
+  // it comes whole the next time; the first part, already whole, isn't fetched again
+  served.set(name(1), parts[1]);
+  gets.length = 0;
+  assert.equal(await k.fullArchive(), true);
+  assert.deepEqual(gets, ["OHLCVT_Full_PARTS_SHA256SUMS.txt", name(1)]);
+  assert.deepEqual(fs.readdirSync(raw), ["Kraken_OHLCVT_Full.zip"]);
+  assert.deepEqual(fs.readFileSync(path.join(raw, "Kraken_OHLCVT_Full.zip")), zip);
+  // once it's there, never again
+  assert.equal(await k.fullArchive(), false);
+  // stopped while its test ran: the whole joined file is tested again, nothing downloaded again
+  fs.renameSync(path.join(raw, "Kraken_OHLCVT_Full.zip"), path.join(raw, "Kraken_OHLCVT_Full.zip.joining"));
+  gets.length = 0;
+  assert.equal(await k.fullArchive(), true);
+  assert.deepEqual(gets, ["OHLCVT_Full_PARTS_SHA256SUMS.txt"]);
+  assert.deepEqual(fs.readdirSync(raw), ["Kraken_OHLCVT_Full.zip"]);
+  // a joined file that won't test (every part matched, so the zip tool is what failed) stays, says why, and is
+  // tested again next time: never ten gigabytes again every hour
+  const broken = Buffer.from(zip);
+  broken.fill(0, 40, 200);
+  fs.rmSync(path.join(raw, "Kraken_OHLCVT_Full.zip"));
+  fs.writeFileSync(path.join(raw, "Kraken_OHLCVT_Full.zip.joining"), broken);
+  await assert.rejects(k.fullArchive(), /came in whole .* couldn't read it/);
+  assert.deepEqual(fs.readdirSync(raw), ["Kraken_OHLCVT_Full.zip.joining"]);
+  gets.length = 0;
+  await assert.rejects(k.fullArchive(), /couldn't read it/);
+  assert.deepEqual(gets, ["OHLCVT_Full_PARTS_SHA256SUMS.txt"]);
+  fs.rmSync(raw, { recursive: true });
 });
 

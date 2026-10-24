@@ -18,7 +18,9 @@
 // here waits its turn. One writer at a time (data/kraken.lock). Everything the Market data page shows is
 // in data/status.json.
 import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import readline from "node:readline";
+import { pipeline } from "node:stream/promises";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +28,8 @@ import { openDb, seriesId, sourceId, upsertBars, replaceRange, lastTime, getStat
 
 const RAW = path.join(DATA, "raw", "kraken");
 const API = "https://api.kraken.com/0/public";
-const FILES = "https://assets.kraken.com/marketing/institutions";
+// Kraken's archives (KRAKEN_FILES points the tests at a local copy)
+const FILES = (process.env.KRAKEN_FILES || "https://assets.kraken.com/marketing/institutions").replace(/\/+$/, "");
 const INTERVALS = [1, 5, 15, 60, 240, 720, 1440]; // minutes: what the archives hold
 // what the OHLC endpoint serves: no 720 (12h), which is built from 4h bars instead
 const API_INTERVALS = new Set([1, 5, 15, 60, 240, 1440]);
@@ -349,6 +352,23 @@ async function update(db, pairs, { now: forced = false } = {}) {
     status((s) => ((s.kraken ||= {}).automatic = false));
     return;
   }
+  // a store with no bars yet starts from Kraken's archive (the first download)
+  if (!db.prepare("SELECT 1 FROM bars LIMIT 1").get()) {
+    try {
+      await fullArchive();
+      await bulk(db, pairs, false);
+    } catch (e) {
+      status((s) => {
+        const k = (s.kraken ||= {});
+        k.lastRun = iso();
+        k.failures = (k.failures || 0) + 1;
+        k.lastError = { at: iso(), message: e.message, pairs: pairs.length };
+      });
+      log(`first download: ${e.message}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   const now = Math.floor(Date.now() / 1000);
   let failed = 0,
     lastError = null;
@@ -406,7 +426,12 @@ export const quarterAfter = (q) => {
   return n === 4 ? `${y + 1}Q1` : `${y}Q${n + 1}`;
 };
 async function quarterly(db, pairs) {
-  const have = fs.existsSync(RAW) ? fs.readdirSync(RAW).map((f) => /^Kraken_OHLCVT_(\d{4}Q[1-4])\.zip$/.exec(f)?.[1]).filter(Boolean).sort() : [];
+  const have = fs.existsSync(RAW) ? fs.readdirSync(RAW).map((f) => /^Kraken_OHLCVT_(\d{4}Q[1-4])\.zip$/.exec(f)?.[1]).filter(Boolean) : [];
+  // a store started from the Full archive alone: the quarters after the one it ends with
+  const full = path.join(RAW, "Kraken_OHLCVT_Full.zip");
+  const fq = fs.existsSync(full) ? fullQuarter(full) : null;
+  if (fq) have.push(fq);
+  have.sort();
   if (!have.length) return;
   const next = quarterAfter(have.at(-1));
   const name = `Kraken_OHLCVT_${next}.zip`;
@@ -424,6 +449,153 @@ async function quarterly(db, pairs) {
   fs.renameSync(part, path.join(RAW, name));
   log(`${name}: downloaded and tested; importing`);
   await bulk(db, pairs, false);
+}
+
+// The last whole quarter in an archive, from Kraken's MANIFEST.json (coverage.end, "2026-09-30" is 2026Q3). An
+// end partway through a quarter leaves that quarter to the quarterly file.
+export function quarterEnding(end) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(end || "");
+  if (!m) return null;
+  const next = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + 1));
+  const whole = next.getUTCDate() === 1 && next.getUTCMonth() % 3 === 0;
+  const y = +m[1],
+    q = Math.ceil(+m[2] / 3);
+  return whole ? `${y}Q${q}` : q === 1 ? `${y - 1}Q4` : `${y}Q${q - 1}`;
+}
+function fullQuarter(zip) {
+  try {
+    return quarterEnding(JSON.parse(zipRun(ZIP.read(zip, "MANIFEST.json")).toString()).coverage?.end);
+  } catch {
+    return null;
+  }
+}
+
+// ---- the first download: Kraken's Full archive (every pair from its first trade to the end of the last
+// quarter, about 10 GB) in the parts Kraken posts. Each part resumes where it stopped and is checked against
+// Kraken's own SHA-256; the parts are joined one by one, each going once it's in (so the disk holds about the
+// archive and one part), and every file in the zip is tested before it's used. Only for a store with no bars
+// yet: one that has bars never downloads it again, whether or not its archives are still there.
+const UA = { "user-agent": "curl/8.5.0" };
+// the download's own processes (curl, the zip test) go when the importer does
+const helpers = new Set();
+process.on("exit", () => {
+  for (const c of helpers) c.kill();
+});
+const gbs = (b) => (b / 1e9).toFixed(1);
+const sizeOf = (f) => (fs.existsSync(f) ? fs.statSync(f).size : 0);
+async function headSize(url) {
+  const r = await fetch(url, { method: "HEAD", headers: UA, signal: AbortSignal.timeout(30000) });
+  const n = Number(r.headers.get("content-length") || 0);
+  if (r.status !== 200 || !(n > 0)) throw new Error(`${path.basename(url)}: Kraken answered ${r.status}`);
+  return n;
+}
+function curl(url, file, tick) {
+  return new Promise((resolve, reject) => {
+    const c = spawn("curl", ["-sS", "-f", "-A", "curl/8.5.0", "-C", "-", "--retry", "5", "-o", file, url], { stdio: ["ignore", "ignore", "pipe"] });
+    helpers.add(c);
+    let err = "";
+    c.stderr.on("data", (b) => (err += b));
+    const t = setInterval(tick, 2000);
+    const end = () => {
+      clearInterval(t);
+      helpers.delete(c);
+    };
+    c.on("error", (e) => {
+      end();
+      reject(e.code === "ENOENT" ? new Error("Kraken's history needs curl to download its archive") : e);
+    });
+    c.on("close", (code) => {
+      end();
+      if (code === 0) resolve();
+      else reject(new Error(`${path.basename(file)}: ${err.trim() || `curl stopped (${code})`}`));
+    });
+  });
+}
+// every file in a zip tested, without holding the importer up (a stop while testing 10 GB works at once)
+function zipTest(zip) {
+  return new Promise((resolve, reject) => {
+    const c = spawn(ZIP.tool, ZIP.test(zip), { stdio: ["ignore", "ignore", "pipe"] });
+    helpers.add(c);
+    let err = "";
+    c.stderr.on("data", (b) => (err += b));
+    c.on("error", (e) => {
+      helpers.delete(c);
+      reject(zipMissing(e));
+    });
+    c.on("close", (code) => {
+      helpers.delete(c);
+      if (code === 0) resolve();
+      else reject(new Error(err.trim().split(/\r?\n/).pop() || `${ZIP.tool} found a damaged file (${code})`));
+    });
+  });
+}
+function sha256(file) {
+  return new Promise((resolve, reject) => {
+    const h = createHash("sha256");
+    fs.createReadStream(file)
+      .on("data", (b) => h.update(b))
+      .on("end", () => resolve(h.digest("hex")))
+      .on("error", reject);
+  });
+}
+export async function fullArchive() {
+  const name = "Kraken_OHLCVT_Full.zip",
+    zip = path.join(RAW, name);
+  if (fs.existsSync(zip)) return false;
+  fs.mkdirSync(RAW, { recursive: true });
+  noteJob({ kind: "download", note: "Kraken's archive: asking Kraken for it" });
+  const r = await fetch(`${FILES}/OHLCVT_Full_PARTS_SHA256SUMS.txt`, { headers: UA, signal: AbortSignal.timeout(30000) });
+  if (r.status !== 200) throw new Error(`Kraken's archive: its checksums didn't come (${r.status})`);
+  const parts = (await r.text())
+    .split(/\r?\n/)
+    .map((l) => /^([0-9a-f]{64})\s+\*?(Kraken_OHLCVT_Full\.zip\.part\d+)$/i.exec(l.trim()))
+    .filter(Boolean)
+    .map((m) => ({ sum: m[1].toLowerCase(), name: m[2], file: path.join(RAW, m[2]) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (!parts.length) throw new Error("Kraken's archive: its checksums name no parts");
+  for (const p of parts) p.size = await headSize(`${FILES}/${p.name}`);
+  const total = parts.reduce((t, p) => t + p.size, 0),
+    have = parts.reduce((t, p) => t + Math.min(sizeOf(p.file), p.size), 0);
+  // joined whole last time and stopped while being tested: test it again rather than download it again
+  const joining = `${zip}.joining`;
+  if (sizeOf(joining) === total) return testAndKeep(joining, zip, name, total);
+  // what's still to come, and a part's room while joining, above the floor
+  diskCheck((total - have + Math.max(...parts.map((p) => p.size))) / 1e9 + 2);
+  let done = 0;
+  for (const [i, p] of parts.entries()) {
+    const label = `Kraken's archive, part ${i + 1} of ${parts.length}`;
+    if (sizeOf(p.file) > p.size) fs.rmSync(p.file);
+    const tick = () => noteJob({ kind: "download", note: `${label}, ${gbs(done + sizeOf(p.file))} of ${gbs(total)} GB` });
+    tick();
+    if (sizeOf(p.file) < p.size) await curl(`${FILES}/${p.name}`, p.file, tick);
+    noteJob({ kind: "download", note: `${label}, checking it` });
+    if ((await sha256(p.file)) !== p.sum) {
+      fs.rmSync(p.file);
+      throw new Error(`${p.name} didn't match Kraken's checksum; it downloads again on the next try`);
+    }
+    done += p.size;
+  }
+  fs.rmSync(joining, { force: true });
+  for (const [i, p] of parts.entries()) {
+    noteJob({ kind: "download", note: `Kraken's archive, joining part ${i + 1} of ${parts.length}` });
+    await pipeline(fs.createReadStream(p.file), fs.createWriteStream(joining, { flags: "a" }));
+    fs.rmSync(p.file);
+  }
+  return testAndKeep(joining, zip, name, total);
+}
+async function testAndKeep(joining, zip, name, total) {
+  noteJob({ kind: "download", note: "Kraken's archive, testing every file in it" });
+  try {
+    await zipTest(joining);
+    if (!listing(joining).has("MANIFEST.json")) throw new Error("no MANIFEST.json, not Kraken's layout");
+  } catch (e) {
+    // every part matched Kraken's checksum, so the data is right and this computer's zip tool is what failed:
+    // the joined file stays and is tested again next time rather than downloaded again
+    throw new Error(`Kraken's archive came in whole (every part matched Kraken's checksum), but ${ZIP.tool} here couldn't read it: ${e.message}. It's tested again on the next try; to download it again instead, delete ${path.basename(joining)} from history/raw/kraken in the data folder`);
+  }
+  fs.renameSync(joining, zip);
+  log(`${name}: ${gbs(total)} GB, every part matched Kraken's checksum and every file tested`);
+  return true;
 }
 
 // Hours whose 1m bars don't add up to Kraken's own 1h bar (trade counts differ). Recent ones (90 days)
@@ -520,7 +692,9 @@ async function verifyPair(db, pair, now, same) {
 
 // ---- coins in and out
 async function addPair(db, pair) {
-  const zips = archives();
+  let zips = archives();
+  // a fresh store: the coin's history starts with Kraken's archive (the first download)
+  if (!zips.length && (await fullArchive())) zips = archives();
   if (!zips.length) throw new Error("Kraken's archives aren't downloaded (see history/README.md)");
   // a coin listed after the Full archive's end is only in the quarters after it
   if (!zips.some((z) => listing(z).has(`${pair}_1.csv`))) throw new Error(`${pair} isn't in Kraken's archives (Kraken's own names: XBTUSD, XDGUSD)`);
@@ -673,6 +847,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     process.on("disconnect", () => process.exit(0));
     process.channel?.unref();
   }
+  // stopped outright (the runner's SIGTERM, Ctrl+C): exit properly, so a download's curl goes too
+  for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => process.exit(1));
   const [cmd, ...rest] = process.argv.slice(2);
   const flags = new Set(rest.filter((x) => x.startsWith("--")));
   const named = rest.filter((x) => !x.startsWith("--"));

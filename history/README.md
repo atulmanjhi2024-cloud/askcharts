@@ -5,7 +5,10 @@ your computer, from each coin's first trade to now, so KRAKEN charts and the str
 reach back years.
 
 Nothing downloads until you ask: Settings (the gear), Market data, Download Kraken history. The first
-download is Kraken's archive, about 10 GB, and needs 20 GB free. After that, an update every hour keeps
+download is Kraken's archive, about 10 GB in five parts, each checked against Kraken's own checksum. It
+needs about 34 GB free while it comes in and is checked, and 20 GB after. If it stops partway, it carries
+on from there next time. Then each coin catches up from the end of the archive at Kraken's pace: minutes for
+a quiet coin, an hour or more for a busy one. After that, an update every hour keeps
 the coins current. Add or remove coins on the same page.
 
 ## Where the bars come from

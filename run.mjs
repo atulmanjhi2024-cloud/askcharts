@@ -239,7 +239,9 @@ setInterval(() => {
     /* never turned on */
   }
   const on = s.enabled === true,
-    server = s.server || "wss://xrplcluster.com",
+    // xrplcluster.com, the default before 0.1.16 (turning XRPL on saved it), counts as no choice made: it can't
+    // keep up with every ledger, and lib/onchain.js reads it the same way so the page agrees
+    server = s.server && s.server !== "wss://xrplcluster.com" ? s.server : "wss://s1.ripple.com",
     history = s.history !== false;
   if (kids.has("xrpl") && (!on || server !== xrplServer || history !== xrplHistory)) {
     log("runner", !on ? "XRPL On chain: turned off" : server !== xrplServer ? `XRPL On chain: switching to ${server}` : `XRPL On chain: shared history ${history ? "on" : "off"}`);

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.16 (2026-10-24)
+
+Download Kraken history works on a fresh install now, and XRPL On chain copes with a public server that says to slow down.
+
+- Download Kraken history in Settings, Market data downloads Kraken's archive. Until now it only switched on the
+  hourly update, which had nothing to start from, so every update failed with "nothing stored yet". The archive
+  is about 10 GB in five parts, and each part is checked against Kraken's own checksum. If it stops partway it
+  carries on from there next time, and every file in it is tested before it's used. If your computer's unzip
+  can't read it, Market data says so and nothing is downloaded twice. It needs about 34 GB free
+  while it comes in and 20 GB after. Then each coin catches up at Kraken's pace, which takes minutes for a quiet
+  coin and an hour or more for a busy one.
+- XRPL On chain on xrplcluster.com kept getting cut off for asking too much at once. Its free allowance turned
+  out smaller than one ledger with its transactions every few seconds, so even a well behaved collector falls
+  behind there. The default server is now Ripple's wss://s1.ripple.com, which kept up in testing, and an
+  install on xrplcluster.com moves to it by itself. A server you picked yourself stays. If it can't keep up,
+  Market data now says it's falling behind and suggests s1.ripple.com or your own node.
+- When a server says to slow down, the collector waits as long as it asks, fills in older ledgers more slowly
+  and stays connected, instead of reconnecting straight into the same limit. On a public server it fills in at
+  2 ledgers a second; on your own node it stays at 5.
+- The XRP Ledger line in Market data says why it can't connect, for example that the server is rate limiting
+  your network, and says when it's filling in more slowly. After Save server it shows "Switching to" the new
+  server until the collector is on it.
+- A server you've typed but not saved no longer gets lost when the page refreshes underneath, which sometimes
+  swallowed the Save click.
+
 ## 0.1.15 (2026-10-24)
 
 The Kraken history updates every hour again, and Market data can add coins in any currency, download a coin as CSV and shrink the store after a Remove.
