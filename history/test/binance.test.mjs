@@ -157,11 +157,27 @@ test("a file that doesn't match its checksum stops the download, and says which"
   damaged.clear();
 });
 
+test("a coin Binance doesn't list: left out of a download, and not a failed update when it's on the list", async () => {
+  db.prepare("DELETE FROM bars").run();
+  assert.equal(await binance.job(db, { source: "binance", cmd: "start", pairs: ["TESTUSDT", "XDCUSDT"] }), "downloaded; Binance doesn't list XDCUSDT, so it's left out");
+  const set = JSON.parse(fs.readFileSync(path.join(tmp, "settings.json"), "utf8")).binance;
+  assert.deepEqual(set.pairs, ["TESTUSDT"]);
+  let st = JSON.parse(fs.readFileSync(path.join(tmp, "status.json"), "utf8")).binance;
+  assert.deepEqual(st.notListed, ["XDCUSDT"]);
+  // already on the list (from before this check): said on its row, no failure counted
+  fs.writeFileSync(path.join(tmp, "settings.json"), JSON.stringify({ binance: { pairs: ["TESTUSDT", "XDCUSDT"], automatic: true } }));
+  await binance.update(db, { now: true });
+  st = JSON.parse(fs.readFileSync(path.join(tmp, "status.json"), "utf8")).binance;
+  assert.equal(st.failures, 0);
+  assert.equal(st.pairs.XDCUSDT.error.message, "Binance doesn't list XDCUSDT. Remove it to take it off the list.");
+  await assert.rejects(binance.job(db, { cmd: "start", pairs: ["XDCUSDT"] }), /Binance doesn't list XDCUSDT/);
+});
+
 test("the page's jobs: start, a pair Binance doesn't have refused, remove", async () => {
   db.prepare("DELETE FROM bars").run();
   assert.equal(await binance.job(db, { source: "binance", cmd: "start", pairs: ["TESTUSDT"] }), "downloaded");
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(tmp, "settings.json"), "utf8")).binance, { pairs: ["TESTUSDT"], automatic: true });
-  await assert.rejects(binance.job(db, { cmd: "add", pair: "NOPEUSDT" }), /Invalid symbol/);
+  await assert.rejects(binance.job(db, { cmd: "add", pair: "NOPEUSDT" }), /Binance doesn't list NOPEUSDT/);
   await assert.rejects(binance.job(db, { cmd: "add", pair: "not a pair" }), /Binance names like BTCUSDT/);
   assert.equal(await binance.job(db, { cmd: "remove", pair: "TESTUSDT" }), "removed TESTUSDT");
   assert.equal(rows(60).length, 0);

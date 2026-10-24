@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.22 (2026-10-24)
+
+A coin Binance doesn't list no longer gets onto the Binance history's list, or fails its hourly update.
+
+- Download Binance history offers your Kraken coins in USDT, and Binance doesn't list every one of them (XDC,
+  for one). It now asks Binance about each coin first, leaves out the ones it doesn't list, and says which.
+- A coin on the list that Binance doesn't list, or stops listing later, says so on its row, keeps any bars
+  already stored, and isn't counted as a failed update any more.
+
 ## 0.1.21 (2026-10-24)
 
 Binance's own bars on your own computer, for BINANCE charts, from each coin's first month on Binance.

@@ -104,6 +104,9 @@ export function binanceHistory(app) {
       for (const pair of q.filter((x) => x.cmd === "add").map((x) => x.pair).filter((x) => !list.includes(x)))
         h += `<tr><td><b>${esc(pair)}</b></td><td>…</td><td>…</td><td><span class="muted">Adding</span></td><td></td></tr>`;
       h += "</tbody></table>";
+      // coins offered that Binance doesn't list (a Kraken coin like XDC), left out of the download
+      const out = (b.notListed || []).filter((x) => !list.includes(x));
+      if (out.length) h += `<div class="ai-sub md-tight">Binance doesn't list ${esc(out.join(", "))}, so ${out.length === 1 ? "it's" : "they're"} left out.</div>`;
       h += addRow;
       if (!ro) h += "<div class=\"ai-sub md-tight\">Binance's names, as on its charts: BTCUSDT, ETHBTC. Removing a coin deletes its stored bars.</div>";
       return `${h}</div>`;

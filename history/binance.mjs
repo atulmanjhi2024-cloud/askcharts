@@ -103,9 +103,19 @@ async function fileBars(path) {
 }
 
 // The month a pair's trading began (Binance's first monthly bar).
+// A pair Binance doesn't list (never did, like XDCUSDT, or not any more): a plain reason, marked so it isn't
+// counted as a failed update.
+const notListed = (pair) => Object.assign(new Error(`Binance doesn't list ${pair}`), { notListed: true });
+const listed = async (pair, work) => {
+  try {
+    return await work();
+  } catch (e) {
+    throw /invalid symbol/i.test(e.message) ? notListed(pair) : e;
+  }
+};
 export async function firstMonth(pair) {
-  const rows = await get(`${API}/api/v3/klines?symbol=${pair}&interval=1M&startTime=0&limit=1`);
-  if (!rows?.length) throw new Error(`Binance has no ${pair}`);
+  const rows = await listed(pair, () => get(`${API}/api/v3/klines?symbol=${pair}&interval=1M&startTime=0&limit=1`));
+  if (!rows?.length) throw notListed(pair);
   return seconds(rows[0][0]);
 }
 const monthStart = (t) => {
@@ -176,7 +186,7 @@ export async function updatePair(db, pair, now = Date.now() / 1000) {
     const last = lastTime(db, seriesId(db, "BINANCE", pair, TFS[name]));
     const from = last != null ? last + TFS[name] : (first ??= await firstMonth(pair));
     if (name === "1m" && last == null) note({ kind: "binance", pair, note: `${pair} from ${ym(from)}` });
-    const n = await fill(db, pair, name, from, Math.floor(now), srcFiles, srcApi);
+    const n = await listed(pair, () => fill(db, pair, name, from, Math.floor(now), srcFiles, srcApi));
     if (name === "1m") minutes = n;
   }
   const span = db.prepare("SELECT MIN(t) AS first, MAX(t) AS last, COUNT(*) AS n FROM bars WHERE series = ?").get(seriesId(db, "BINANCE", pair, 60));
@@ -194,8 +204,11 @@ export async function update(db, { now: forced = false } = {}) {
       const n = await updatePair(db, pair);
       log(`${pair}: ${n} new minutes from Binance`);
     } catch (e) {
-      errors.push(`${pair}: ${e.message}`);
-      status((b) => (((b.pairs ||= {})[pair] ||= {}).error = { at: iso(Date.now() / 1000), message: e.message }));
+      // one Binance doesn't list (or stopped listing: its stored bars stay) says so; it isn't a failed update
+      const kept = e.notListed && db.prepare("SELECT 1 FROM bars b JOIN series s ON s.id = b.series WHERE s.exchange = 'BINANCE' AND s.symbol = ? LIMIT 1").get(pair);
+      const message = !e.notListed ? e.message : kept ? `${e.message} any more; its stored bars stay. Remove it to take it off the list.` : `${e.message}. Remove it to take it off the list.`;
+      if (!e.notListed) errors.push(`${pair}: ${e.message}`);
+      status((b) => (((b.pairs ||= {})[pair] ||= {}).error = { at: iso(Date.now() / 1000), message }));
     }
   }
   note(null);
@@ -225,9 +238,22 @@ export async function job(db, j) {
     return out;
   };
   if (j.cmd === "start") {
-    saveSettings({ ...set, pairs: pairs(j.pairs), automatic: true });
+    // each pair asked about first: one Binance doesn't list (a Kraken coin like XDC) is left out, and said
+    const keep = [],
+      out = [];
+    for (const p of pairs(j.pairs))
+      try {
+        await firstMonth(p);
+        keep.push(p);
+      } catch (e) {
+        if (!e.notListed) throw e;
+        out.push(p);
+      }
+    status((b) => (b.notListed = out));
+    if (!keep.length) throw new Error(`Binance doesn't list ${out.join(", ")}`);
+    saveSettings({ ...set, pairs: keep, automatic: true });
     await update(db, { now: true });
-    return "downloaded";
+    return out.length ? `downloaded; Binance doesn't list ${out.join(", ")}, so it's left out` : "downloaded";
   }
   if (j.cmd === "add") {
     const [pair] = pairs(j.pair);
