@@ -175,6 +175,10 @@ class App {
     } catch {
       /* first run */
     }
+    // the revision this page builds on (saveState); the server keeps it, not the page's state
+    this.stateRev = Number(state.rev) || 0;
+    delete state.rev;
+    delete state.savedAt;
     this.state = {
       layout: "1",
       panes: [
@@ -232,6 +236,9 @@ class App {
     this.refreshAlerts();
     this.checkHealth();
     setInterval(() => this.checkHealth(), 60000);
+    // back to this page: has another one saved meanwhile?
+    document.addEventListener("visibilitychange", () => !document.hidden && this.checkElsewhere());
+    window.addEventListener("focus", () => this.checkElsewhere());
   }
 
   // ---------- persistence ----------
@@ -240,13 +247,58 @@ class App {
     this.state.panes = this.panes.map((p) => p.cfg);
     this.state.active = this.panes.indexOf(this.active);
     clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(
-      () =>
-        api
-          .put("/api/state", this.state)
-          .catch((e) => this.toast(`Couldn't save: ${esc(e.message)}`, "err")),
-      400,
-    );
+    this.saveTimer = setTimeout(() => this.saveState(), 400);
+  }
+  // One save at a time, each naming the revision it builds on. If another page (a second tab, another device)
+  // saved since, nothing is written until the person picks: reload to see those changes, or keep this page's.
+  async saveState() {
+    this.saveTimer = null;
+    if (this.saving) return void (this.saveAgain = true);
+    if (this.elsewhere) return this.savedElsewhere(this.elsewhere.rev);
+    this.saving = true;
+    try {
+      const r = await api.put(`/api/state?rev=${this.stateRev}`, this.state);
+      if (Number.isInteger(r?.rev)) this.stateRev = r.rev;
+    } catch (e) {
+      if (e.status === 409) this.savedElsewhere(e.data?.rev);
+      else this.toast(`Couldn't save: ${esc(e.message)}`, "err");
+    } finally {
+      this.saving = false;
+      if (this.saveAgain) {
+        this.saveAgain = false;
+        this.saveState();
+      }
+    }
+  }
+  async checkElsewhere() {
+    if (this.saving || this.saveTimer || this.elsewhere || Date.now() - (this.checkedAt || 0) < 2000) return;
+    this.checkedAt = Date.now();
+    try {
+      const r = await api.get("/api/state/rev");
+      if (Number.isInteger(r?.rev) && r.rev !== this.stateRev && !this.saving && !this.saveTimer) this.savedElsewhere(r.rev);
+    } catch {
+      /* offline for a moment: the next save will find out */
+    }
+  }
+  // Saves wait while this shows; closing it without a pick shows it again at the next change.
+  savedElsewhere(rev) {
+    this.elsewhere = { rev: Number.isInteger(rev) ? rev : this.stateRev };
+    if (this.elsewhereEl?.isConnected) return;
+    const el = document.createElement("div");
+    el.className = "toast alert elsewhere";
+    el.innerHTML = '<span>Your charts were changed in another tab or on another device. Reload to see those changes, or keep this page\'s (it replaces them).</span><span class="toast-acts"><button class="toast-undo" data-x="reload">Reload</button><button class="toast-undo" data-x="keep">Keep this one</button></span>';
+    el.onclick = (e) => {
+      const x = e.target.closest("[data-x]")?.dataset.x;
+      if (x === "reload") return location.reload();
+      el.remove();
+      if (x === "keep") {
+        this.stateRev = this.elsewhere.rev;
+        this.elsewhere = null;
+        this.saveState();
+      }
+    };
+    $("#toasts").appendChild(el);
+    this.elsewhereEl = el;
   }
   // A new drawing starts from the look saved as this tool's default (the toolbar's Template menu).
   drawingDefaults(type) {

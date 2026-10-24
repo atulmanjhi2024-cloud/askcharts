@@ -54,7 +54,7 @@ export function dataKeys() {
       h += '<div class="ai-sub md-tight">US stocks, and CME futures (NQ, MNQ, ES, MES) on a futures plan. Live or delayed depends on your plan; the free plan is end of day only.</div>';
 
       h += '<p class="ai-note">Keys stay on this computer, in a file only this account can read, and each is only ever sent to its own provider. A saved key is never shown again. These actions take effect right away.</p>';
-      h += '<p class="ai-note">Stock and ETF history isn\'t stored on this computer yet: their charts use each source\'s own feed.</p></div>';
+      h += "</div>";
       return h;
     },
     bind(page, redraw) {

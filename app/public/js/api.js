@@ -94,7 +94,7 @@ async function req(method, url, body) {
   } catch {
     data = text;
   }
-  if (!res.ok) throw new Error(data?.error || data || `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || data || `HTTP ${res.status}`), { status: res.status, data });
   return data;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "askcharts",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "AskCharts: charts, backtests and an AI that works on the chart for you. Runs on your own computer or server.",
   "type": "module",
   "private": true,

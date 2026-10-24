@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.20 (2026-10-24)
+
+Years of 1-minute stock bars on your own computer, and two open pages no longer write over each other's charts.
+
+- **Stock history.** Settings, Stock data has a new section under the keys: with your free Alpaca key it
+  downloads 1-minute bars for US stocks and ETFs since 2016, the whole market's trades (every exchange), not only
+  the small share the free live feed sees. It offers the US stocks on your watchlists, takes under a minute and
+  about 85 MB a stock, then updates every hour. Stock charts and the strategy report's backtests use the stored
+  bars, with only the newest coming live; the chart's title says where its bars came from. Regular hours, split
+  adjusted, as stock charts show. Nothing downloads until you start it.
+- **Two pages, one set of charts.** With AskCharts open in two windows (or a window and another device), the one
+  that's behind no longer saves its older charts over the newer ones. It says your charts were changed elsewhere,
+  with Reload and Keep this one, and saves nothing until you pick. Coming back to a page that's behind says so too.
+- **Grok's token count.** Answers from Grok show how many tokens they used, as the other providers' do.
+- **The robot in Settings.** Settings, AskCharts AI shows the same robot as its button on the right toolbar.
+
 ## 0.1.19 (2026-10-24)
 
 Stock data comes first among the data tabs in Settings: Stock data, Crypto data, then On chain data.

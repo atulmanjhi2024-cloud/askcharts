@@ -154,7 +154,7 @@ function queued() {
       .sort()
       .map((f) => readJson(path.join(JOBS, f), null))
       .filter(Boolean)
-      .map((j) => ({ cmd: j.cmd, pair: j.pair, on: j.on, at: j.at }));
+      .map((j) => ({ cmd: j.cmd, pair: j.pair, on: j.on, at: j.at, ...(j.source ? { source: j.source, symbol: j.symbol } : {}) }));
   } catch {
     return [];
   }
@@ -168,15 +168,19 @@ const jobsOff = () => process.env.QT_HISTORY_JOBS === "off";
 export function status() {
   const st = readJson(STATUS, {}),
     set = readJson(SETTINGS, null);
-  const k = st.kraken || {};
+  const k = st.kraken || {},
+    a = st.alpaca || {};
   // a job whose importer has gone (a crash, a restart of the box) isn't running any more
   if (k.job && !(k.job.pid && alive(k.job.pid))) k.job = null;
+  if (a.job && !(a.job.pid && alive(a.job.pid))) a.job = null;
   return {
     available: existsSync(FILE),
     updatedAt: st.updatedAt ?? null,
     schema: st.schema ?? null,
     disk: st.disk ?? null,
     kraken: { ...k, pairs: k.pairs || {}, coins: set?.kraken?.pairs ?? Object.keys(k.pairs || {}), automatic: set?.kraken?.automatic ?? k.automatic ?? configAutomatic() },
+    // Settings, Stock data: US stocks from Alpaca (history/alpaca.mjs), off until downloaded
+    alpaca: { ...a, symbols: a.symbols || {}, list: set?.alpaca?.symbols ?? [], automatic: set?.alpaca?.automatic ?? false },
     queued: queued(),
     jobs: !jobsOff(),
   };
@@ -205,8 +209,28 @@ export function health() {
 // empty). Only these commands, only plain Kraken pair names; written whole, then moved into the folder.
 const JOB_CMDS = new Set(["update", "add", "remove", "verify", "gaps", "automatic"]);
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
+// Stock tickers as Alpaca writes them (F, AAPL, BRK.B), for the Stock data page's requests (source "alpaca").
+const STOCK = /^[A-Z][A-Z0-9.]{0,9}$/;
+const STOCK_CMDS = new Set(["start", "add", "remove", "update", "automatic"]);
+function stockJob(body) {
+  const cmd = String(body?.cmd || "");
+  if (!STOCK_CMDS.has(cmd)) throw bad("Not a Stock data action");
+  const job = { source: "alpaca", cmd, at: new Date().toISOString() };
+  const tick = (x) => String(x || "").trim().toUpperCase();
+  if (cmd === "add" || cmd === "remove") {
+    job.symbol = tick(body.symbol);
+    if (!STOCK.test(job.symbol)) throw bad("Use the stock's ticker, like AAPL, F or BRK.B");
+  }
+  if (cmd === "start") {
+    job.symbols = [...new Set((Array.isArray(body.symbols) ? body.symbols : []).map(tick))].slice(0, 50);
+    if (!job.symbols.length || !job.symbols.every((s) => STOCK.test(s))) throw bad("Pick at least one stock, by its ticker, like AAPL");
+  }
+  if (cmd === "automatic") job.on = body.on === true;
+  return job;
+}
 export function requestJob(body) {
   if (jobsOff()) throw Object.assign(new Error("This copy reads the history store read only. Its actions run on the copy that keeps the store."), { status: 403 });
+  if (body?.source === "alpaca") return queueJob(stockJob(body));
   const cmd = String(body?.cmd || "");
   if (!JOB_CMDS.has(cmd)) throw bad("Not a Crypto data action");
   const job = { cmd, at: new Date().toISOString() };
@@ -215,10 +239,14 @@ export function requestJob(body) {
     if (!/^[A-Z0-9]{2,20}$/.test(job.pair)) throw bad("Use Kraken's name for the pair, like XBTUSD");
   }
   if (cmd === "automatic") job.on = body.on === true;
+  return queueJob(job);
+}
+function queueJob(job) {
+  const cmd = job.cmd;
   const waiting = queued();
   if (waiting.length >= 20) throw Object.assign(new Error("Twenty requests are already waiting"), { status: 429 });
   // the same request twice is one (Automatic: the newer choice wins, so it's always written)
-  if (cmd !== "automatic" && waiting.some((w) => w.cmd === cmd && w.pair === job.pair)) return { ok: true, queued: waiting };
+  if (cmd !== "automatic" && waiting.some((w) => w.cmd === cmd && w.pair === job.pair && w.source === job.source && w.symbol === job.symbol)) return { ok: true, queued: waiting };
   fs.mkdirSync(JOBS, { recursive: true, mode: 0o700 });
   const name = `${Date.now()}-${randomUUID().slice(0, 8)}.json`,
     tmp = path.join(DIR, `.job-${name}.tmp`);

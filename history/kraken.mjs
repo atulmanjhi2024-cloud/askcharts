@@ -25,6 +25,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, seriesId, sourceId, upsertBars, replaceRange, lastTime, getState, setState, aggregate, writeJson, readJson, DATA, HERE, DB_FILE, STATUS_FILE, SETTINGS_FILE, JOBS_DIR, SCHEMA } from "./db.mjs";
+// the store's other writer: US stocks from Alpaca (Settings, Stock data), run from here under the same lock
+import * as alpaca from "./alpaca.mjs";
 
 const RAW = path.join(DATA, "raw", "kraken");
 const API = "https://api.kraken.com/0/public";
@@ -345,6 +347,7 @@ function pairSummary(db, pair) {
   return { first: Math.min(r.first ?? Infinity, day?.first ?? Infinity), last1m: r.last, bars1m: r.n };
 }
 
+export const hasKrakenBars = (db) => !!db.prepare("SELECT 1 FROM bars b JOIN series s ON s.id = b.series WHERE s.exchange = 'KRAKEN' LIMIT 1").get();
 async function update(db, pairs, { now: forced = false } = {}) {
   const set = settings();
   if (!set.kraken.automatic && !forced) {
@@ -352,8 +355,8 @@ async function update(db, pairs, { now: forced = false } = {}) {
     status((s) => ((s.kraken ||= {}).automatic = false));
     return;
   }
-  // a store with no bars yet starts from Kraken's archive (the first download)
-  if (!db.prepare("SELECT 1 FROM bars LIMIT 1").get()) {
+  // a store with no Kraken bars yet starts from Kraken's archive (the first download); stock bars don't count
+  if (!hasKrakenBars(db)) {
     try {
       await fullArchive();
       await bulk(db, pairs, false);
@@ -770,6 +773,21 @@ export async function jobs(db) {
     const file = path.join(JOBS_DIR, files[0]);
     const job = readJson(file, null);
     fs.rmSync(file, { force: true });
+    // the Stock data page's requests: the stock history's own, with its own names and results
+    if (job?.source === "alpaca") {
+      let ok = true,
+        message;
+      try {
+        log(`stock job ${job.cmd}${job.symbol ? ` ${job.symbol}` : ""}`);
+        message = await alpaca.job(db, job);
+      } catch (e) {
+        ok = false;
+        message = e.message;
+        log(`stock job ${job.cmd}: ${e.message}`);
+      }
+      status((s) => ((s.alpaca ||= {}).lastJob = { cmd: job.cmd, symbol: job.symbol, at: iso(), ok, message }));
+      continue;
+    }
     let ok = true,
       message = "done";
     try {
@@ -868,7 +886,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   try {
     if (writes.includes(cmd)) status((s) => (s.schema = SCHEMA));
     if (cmd === "bulk") await bulk(db, chosen, flags.has("--force"));
-    else if (cmd === "update") await update(db, chosen, { now: flags.has("--now") });
+    else if (cmd === "update") {
+      await update(db, chosen, { now: flags.has("--now") });
+      // the stock history too, on its own Automatic (nothing to do while it's off)
+      if (!named.length)
+        await alpaca.update(db, { now: flags.has("--now") }).catch((e) => {
+          log(`stocks: ${e.message}`);
+          process.exitCode = 1;
+        });
+    }
     else if (cmd === "jobs") await jobs(db);
     else if (cmd === "add") await addPair(db, named[0]);
     else if (cmd === "remove") removePair(db, named[0]);

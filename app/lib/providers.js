@@ -1089,7 +1089,7 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
   limit = Math.min(asked, 20000);
   const sym = await resolve(rawSymbol);
   // a symbol the history store holds can give far more bars than an exchange's API
-  const stored = sym.exchange === "KRAKEN" && parseTf(tf).seconds >= 60 && history.covers("KRAKEN", sym.ticker);
+  const stored = ["KRAKEN", "US"].includes(sym.exchange) && parseTf(tf).seconds >= 60 && history.covers(sym.exchange, sym.ticker);
   if (stored) limit = Math.min(asked, history.MAX_BARS);
   if (sym.exchange === "SPREAD") return spreadCandles(sym, tf, limit);
   // Your own imported bars (data/imports/<NAME>.csv).
@@ -1109,7 +1109,7 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
     const t = sym.ticker;
     const notes = [],
       kraken = {};
-    let chain;
+    let chain, stocks;
     if (sym.exchange === "BINANCE") {
       const { base, quote } = cryptoParts(t);
       const usdQuote = ["USDT", "USDC", "FDUSD", "USD"].includes(quote);
@@ -1147,20 +1147,41 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
         ["Yahoo (delayed)", () => yahooCandles(FUTURES[root].yahoo, tf, limit)],
       ]);
     } else if (sym.exchange === "US") {
+      // The stock history (Settings, Stock data) holds the whole market's bars to about an hour ago: they stay,
+      // and the live sources fill in only from its last bar (that bar too: it may have been stored unfinished).
+      const st = stored ? history.bars("US", t, tf, limit) : null;
+      const cut = st?.candles.length ? st.candles.at(-1).time : null;
+      const want = cut == null ? limit : Math.min(limit, Math.ceil((Date.now() / 1000 - cut) / parseTf(tf).seconds) + 10);
+      if (cut != null) stocks = { st, cut };
       // Your own keys (data/feeds.json) go first; the public sources stay behind them.
-      chain = feeds.stockChain(t, tf, limit).concat(isIntraday(tf)
+      chain = feeds.stockChain(t, tf, want).concat(isIntraday(tf)
         ? [
-            ["Yahoo", () => yahooCandles(t, tf, limit)],
-            ["Nasdaq", () => nasdaqCandles(t, tf, limit)],
+            ["Yahoo", () => yahooCandles(t, tf, want)],
+            ["Nasdaq", () => nasdaqCandles(t, tf, want)],
           ]
         : [
-            ["Nasdaq", () => nasdaqCandles(t, tf, limit)],
-            ["Yahoo", () => yahooCandles(t, tf, limit)],
+            ["Nasdaq", () => nasdaqCandles(t, tf, want)],
+            ["Yahoo", () => yahooCandles(t, tf, want)],
           ]);
     } else {
       chain = [["Yahoo", () => yahooCandles(t, tf, limit)]];
     }
-    const res = await tryChain(chain);
+    let res;
+    try {
+      res = await tryChain(chain);
+    } catch (e) {
+      // the stored stock bars still chart when no live source answers
+      if (!stocks) throw e;
+      res = { candles: [], provider: "the stock history", fallbacks: [] };
+    }
+    if (stocks) {
+      const { st, cut } = stocks;
+      const tail = res.candles.filter((b) => b.time >= cut);
+      if (tail.length && tail[0].time - cut > Math.max(3 * parseTf(tf).seconds, 4 * 86400))
+        notes.push(`The stock history on this computer ends ${utcTime(cut)}, so this chart skips from there to ${utcTime(tail[0].time)}. It fills in with the next update (Settings, Stock data).`);
+      res.candles = [...st.candles.filter((b) => b.time < cut), ...tail].slice(-limit);
+      kraken.source = [`The whole market's bars from Alpaca, stored on this computer: ${utcDay(st.candles[0].time)} to ${utcDay(cut)}.`, tail.length ? `The newest: live from ${res.provider}.` : "No live source is answering, so the chart stops at the stored bars."].join("\n");
+    }
     // Plain words on the chart; the technical reason stays in the server log and /api/health.
     const keyFails = res.fallbacks.filter((f) => feeds.isKeyProvider(f));
     for (const f of keyFails) {
@@ -1186,7 +1207,9 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
       );
     if (res.provider === "Alpaca (IEX)")
       notes.push(
-        "Live from your Alpaca key on the free IEX feed: prices are live, volume counts IEX trades only.",
+        stocks
+          ? "Stored bars are the whole market's; the newest come live from your Alpaca key on the free IEX feed, where volume counts IEX trades only."
+          : "Live from your Alpaca key on the free IEX feed: prices are live, volume counts IEX trades only.",
       );
     if (METALS[t] && res.provider !== "Yahoo")
       notes.push(

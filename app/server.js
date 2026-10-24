@@ -403,10 +403,21 @@ async function handle(req, res) {
       if (req.method === "GET") return send(res, 200, store.read("state", {}));
       if (req.method === "PUT") {
         const patch = await readBody(req, 20e6);
-        const next = { ...store.read("state", {}), ...patch };
+        const now = store.read("state", {});
+        const rev = Number(now.rev) || 0;
+        // Each save names the revision its page last loaded or saved. Another page (a second tab, another
+        // device) saved since: say so instead of writing over it. A save that names none (an older page) is
+        // taken as before.
+        if (q.rev !== undefined && Number(q.rev) !== rev) return send(res, 409, { error: "Your charts were changed in another tab or on another device.", rev, savedAt: now.savedAt || null });
+        const next = { ...now, ...patch, rev: rev + 1, savedAt: new Date().toISOString() };
         store.write("state", next);
-        return send(res, 200, { ok: true });
+        return send(res, 200, { ok: true, rev: next.rev });
       }
+    }
+    // the revision only, for a page coming back into view to see whether another one saved meanwhile
+    if (p === "/api/state/rev" && req.method === "GET") {
+      const now = store.read("state", {});
+      return send(res, 200, { rev: Number(now.rev) || 0, savedAt: now.savedAt || null });
     }
     if (p === "/api/events") {
       res.writeHead(200, {
@@ -446,8 +457,10 @@ async function handle(req, res) {
     // come back in. A plain GET (no x-qt needed): a <a download> link, not a fetch, serves it.
     if (p === "/api/history/export" && req.method === "GET") {
       const pair = String(q.pair || "").trim().toUpperCase();
-      if (!/^[A-Z0-9]{2,20}$/.test(pair)) return send(res, 400, { error: "Use Kraken's name for the pair, like XRPUSD" });
-      const exp = history.exportSeries("KRAKEN", pair);
+      // a stored stock (Settings, Stock data) or a Kraken coin (Crypto data)
+      const stock = q.exchange === "US";
+      if (stock ? !/^[A-Z][A-Z0-9.]{0,9}$/.test(pair) : !/^[A-Z0-9]{2,20}$/.test(pair)) return send(res, 400, { error: stock ? "Use the stock's ticker, like AAPL" : "Use Kraken's name for the pair, like XRPUSD" });
+      const exp = history.exportSeries(stock ? "US" : "KRAKEN", pair);
       if (!exp) return send(res, 404, { error: `${pair} isn't stored on this computer` });
       let gone = false;
       res.on("close", () => (gone = true));

@@ -35,6 +35,29 @@ test('state round-trips', async () => {
   assert.deepEqual(s.watchlists, { Main: ['BINANCE:BTCUSDT'] });
 });
 
+test('a save built on an older revision is refused: another page saved since', async () => {
+  const rev0 = (await (await fetch(`${base}/api/state/rev`)).json()).rev;
+  const put = (body, rev) => fetch(`${base}/api/state${rev === undefined ? '' : `?rev=${rev}`}`, { method: 'PUT', headers: H, body: JSON.stringify(body) });
+  // page A and page B both loaded at rev0; A saves first
+  const a = await put({ layout: '2' }, rev0);
+  assert.equal(a.status, 200);
+  const revA = (await a.json()).rev;
+  assert.equal(revA, rev0 + 1);
+  const b = await put({ layout: '4' }, rev0);
+  assert.equal(b.status, 409);
+  const why = await b.json();
+  assert.equal(why.rev, revA);
+  assert.match(why.error, /another tab or on another device/);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).layout, '2', "B didn't write over A");
+  // B keeps its own: it saves on the revision it was told
+  assert.equal((await put({ layout: '4' }, why.rev)).status, 200);
+  const s = await (await fetch(`${base}/api/state`)).json();
+  assert.deepEqual([s.layout, s.rev], ['4', revA + 1]);
+  // an older page that names no revision is taken as before
+  assert.equal((await put({ layout: '1' })).status, 200);
+  assert.equal((await (await fetch(`${base}/api/state/rev`)).json()).rev, revA + 2);
+});
+
 test('alerts can be created, listed and deleted', async () => {
   const a = await (await fetch(`${base}/api/alerts`, { method: 'POST', headers: H, body: JSON.stringify({ symbol: 'BINANCE:BTCUSDT', tf: '1D', left: 'close', op: '>', right: 1 }) })).json();
   assert.ok(a.id);

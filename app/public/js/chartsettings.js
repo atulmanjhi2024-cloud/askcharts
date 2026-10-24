@@ -6,6 +6,8 @@ import { aiSettings } from "./copilot.js";
 import { marketData } from "./marketdata.js";
 import { onchainData } from "./onchaindata.js";
 import { dataKeys } from "./datakeys.js";
+import { stockHistory } from "./stockhistory.js";
+import { PRODUCTS } from "./products.js";
 import { updatesPage } from "./updates.js";
 import { PALETTE, rgbOf, hexOf, cssOf, lineIcon, STYLES } from "./drawtoolbar.js";
 
@@ -302,7 +304,8 @@ const TAB_ICONS = {
   trading: svg('<path d="M4 20l6-6 4 4 8-9M17 9h5v5M4 24h20"/>'),
   alerts: svg('<circle cx="14" cy="15" r="8"/><path d="M14 10.5V15l3 2M6 6.5l3-2.5M22 6.5L19 4"/>'),
   events: svg('<rect x="5" y="6.5" width="18" height="16.5" rx="2"/><path d="M5 11.5h18M10 4v5M18 4v5"/>'),
-  ai: svg('<path d="M14 4.5c.8 4.8 4.2 8.2 9 9-4.8.8-8.2 4.2-9 9-.8-4.8-4.2-8.2-9-9 4.8-.8 8.2-4.2 9-9z"/>'),
+  // AskCharts AI's robot, the same as its button on the right toolbar, in a box wide enough for its ears
+  ai: `<svg viewBox="-1.5 0 31 28">${PRODUCTS.find((p) => p.id === "copilot").icon}</svg>`,
   about: svg('<circle cx="14" cy="14" r="9.5"/><path d="M14 12.5v7M14 8.6v.4"/>'),
   market: svg('<ellipse cx="14" cy="7.5" rx="8" ry="3"/><path d="M6 7.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13M6 14c0 1.66 3.58 3 8 3s8-1.34 8-3"/>'),
   keys: svg('<circle cx="10" cy="18" r="5"/><path d="M13.5 14.5L23 5M18.5 9.5l3 3M16 12l2.5 2.5"/>'),
@@ -363,9 +366,15 @@ export function openChartSettings(app, chartTypes, start) {
   oc.load().then(() => {
     if (tab === "onchain" && page.isConnected) redraw();
   });
-  // Stock data: your own keys for live US stock prices
+  // Stock data: your own keys for live US stock prices, and the stock history under them (read every few
+  // seconds while the tab is open, as Crypto data is)
   const dk = dataKeys();
   dk.load().then(() => {
+    if (tab === "keys" && page.isConnected) redraw();
+  });
+  const sh = stockHistory(app);
+  let shStale = false;
+  sh.load().then(() => {
     if (tab === "keys" && page.isConnected) redraw();
   });
   // the version, and Check now and Update now
@@ -380,6 +389,15 @@ export function openChartSettings(app, chartTypes, start) {
     // a change that arrives while a coin is being typed waits until the typing stops
     if (mdStale && tab === "market" && page.isConnected && !md.typing(page)) {
       mdStale = false;
+      redraw();
+    }
+  }, 4000);
+  const shPoll = setInterval(async () => {
+    if (!page.isConnected) return clearInterval(shPoll);
+    if (tab !== "keys" || document.hidden) return;
+    if (await sh.load()) shStale = true;
+    if (shStale && tab === "keys" && page.isConnected && !sh.typing(page)) {
+      shStale = false;
       redraw();
     }
   }, 4000);
@@ -590,7 +608,7 @@ export function openChartSettings(app, chartTypes, start) {
       return oc.html();
     },
     keys() {
-      return dk.html();
+      return `${dk.html()}${sh.html()}`;
     },
     updates() {
       return up.html();
@@ -638,7 +656,10 @@ export function openChartSettings(app, chartTypes, start) {
     if (t === "ai") ai.bind(page, redraw);
     if (t === "market") md.bind(page, redraw);
     if (t === "onchain") oc.bind(page, redraw);
-    if (t === "keys") dk.bind(page, redraw);
+    if (t === "keys") {
+      dk.bind(page, redraw);
+      sh.bind(page, redraw);
+    }
     if (t === "updates") up.bind(page, redraw);
     for (const b of page.querySelectorAll("[data-cs-goto]")) b.onclick = () => show(b.dataset.csGoto);
   };

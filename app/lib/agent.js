@@ -119,15 +119,20 @@ export async function step(input, res, fetchImpl = fetch) {
     let r;
     const post = (q) => fetchImpl(q.url, { method: "POST", headers: q.headers, body: JSON.stringify(q.body), signal: ac.signal });
     try {
-      const first = ask(c.images && !noImages.has(seen));
-      r = await post(first);
-      // a model that won't take a chart picture: once more without it, and text only from then on
-      if (openai && r.status === 400 && /"(image_url|input_image)"/.test(JSON.stringify(first.body))) {
-        const body = await r.clone().json().catch(() => ({}));
-        if (/image/i.test(JSON.stringify(body))) {
+      let images = c.images && !noImages.has(seen),
+        q = ask(images);
+      r = await post(q);
+      // a server that won't take the usage option, or a model that won't take a chart picture: once more
+      // without it, and without it from then on
+      for (let tries = 0; openai && r.status === 400 && tries < 2; tries++) {
+        const why = JSON.stringify(await r.clone().json().catch(() => ({})));
+        if (q.body.stream_options && /stream_options|include_usage/i.test(why)) oai.noUsage.add(p.id);
+        else if (/"(image_url|input_image)"/.test(JSON.stringify(q.body)) && /image/i.test(why)) {
           noImages.add(seen);
-          r = await post(ask(false));
-        }
+          images = false;
+        } else break;
+        q = ask(images);
+        r = await post(q);
       }
     } catch (e) {
       if (ac.signal.aborted) return;

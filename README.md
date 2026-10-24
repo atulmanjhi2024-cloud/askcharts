@@ -51,7 +51,7 @@ key gives you live US stock prices (and CME futures, with Polygon): add it in Se
 - Chrome or Edge (Firefox and Safari should work, but I test on Chrome)
 - An internet connection, for live prices, Kraken's history, XRPL On chain and AskCharts AI
 - For AskCharts AI, an API key from Anthropic, OpenAI or xAI
-- Optional: a free Alpaca account, for live US stock prices
+- Optional: a free Alpaca account, for live US stock prices and stock history
 
 ## What gets installed
 
@@ -121,11 +121,12 @@ Without any keys, the charts, data and everything else still work. Only AskChart
 2. **Pick an interval.** Click the interval next to it, or type one on the chart: `5` for 5 minutes, `4h`, `1D`.
 3. **Ask for the rest.** Open AskCharts AI from the robot on the right and say what you want, like "Add RSI and
    a 50 period moving average".
-4. **More history (optional).** Settings, Crypto data downloads Kraken's full history (about 10 GB), and
-   Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger through a public
-   server, which is about 15 GB of downloads a day. When it starts it also fills in up to 90 days of history
-   from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't empty. It only
-   downloads, and you can switch it off in the same place.
+4. **More history (optional).** Settings, Stock data downloads years of 1-minute bars for your US stocks
+   (with the free Alpaca key, about 85 MB a stock), Settings, Crypto data downloads Kraken's full history
+   (about 10 GB), and Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger
+   through a public server, which is about 15 GB of downloads a day. When it starts it also fills in up to 90
+   days of history from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't
+   empty. Each only downloads, and you can switch each off in the same place.
 
 The [quick start](docs/quick-start.md) walks through the screen: the chart, the toolbars and the panels.
 

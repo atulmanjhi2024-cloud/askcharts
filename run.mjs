@@ -200,9 +200,10 @@ if (GATEWAY) {
     );
 }
 
-// ---- Kraken's history: requests from Settings, Crypto data at once, the hourly update (which does
-// nothing while Automatic is off). One at a time: the importer waits for its own lock anyway.
-const histEnv = { ...base, HISTORY_DATA: dirs.history };
+// ---- Kraken's history and the stock history: requests from Settings, Crypto data and Stock data at once, the
+// hourly update (each does nothing while its Automatic is off). One at a time: the importer waits for its own
+// lock anyway. The stock history reads the Alpaca key from the app's feeds.json when it runs.
+const histEnv = { ...base, HISTORY_DATA: dirs.history, FEEDS_FILE: path.join(dirs.app, "feeds.json") };
 const history = (cmd) => !kids.has("history") && run("history", [path.join("history", "kraken.mjs"), cmd], histEnv);
 const jobsDir = path.join(dirs.history, "jobs");
 setInterval(() => {
@@ -212,10 +213,12 @@ setInterval(() => {
     /* no requests yet */
   }
 }, 5000);
-// the hourly update only while Automatic is on: off, there's nothing to do and no store to open
+// the hourly update only while an Automatic is on (Kraken's or the stocks'): off, there's nothing to do and no
+// store to open
 const automatic = () => {
   try {
-    return JSON.parse(fs.readFileSync(path.join(dirs.history, "settings.json"), "utf8")).kraken?.automatic === true;
+    const s = JSON.parse(fs.readFileSync(path.join(dirs.history, "settings.json"), "utf8"));
+    return s.kraken?.automatic === true || s.alpaca?.automatic === true;
   } catch {
     return false;
   }

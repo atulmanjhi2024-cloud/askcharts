@@ -76,6 +76,7 @@ fs.writeFileSync(path.join(dir, "copilot.json"), JSON.stringify({ provider: "ant
 const copilot = await import("../lib/copilot.js");
 const { step } = await import("../lib/agent.js");
 const { toolSpecs } = await import("../public/lib/agent-tools.js");
+const oai = await import("../lib/ai-openai.js");
 after(() => {
   for (const s of Object.values(servers)) s.close();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -270,7 +271,7 @@ test("xAI stays on chat completions: tool calls in pieces by index, results as t
   leaks();
 });
 
-test("xAI: max_tokens, no stream_options, and no picture to a model that doesn't take one", async () => {
+test("xAI: max_tokens, usage asked for, and no picture to a model that doesn't take one", async () => {
   await copilot.setConfig({ provider: "xai", key: KEYS.xai, model: "grok-3" });
   const res = fakeRes();
   await step({ messages: [{ role: "user", content: "Look" }, { role: "assistant", content: "", calls: [{ id: "s1", name: "chart_snapshot", input: {} }] }, { role: "tool", results: [{ id: "s1", image: "QUJD", mediaType: "image/jpeg" }] }] }, res);
@@ -278,11 +279,37 @@ test("xAI: max_tokens, no stream_options, and no picture to a model that doesn't
   assert.equal(r.at, "xai");
   assert.equal(r.auth, `Bearer ${KEYS.xai}`);
   assert.equal(r.body.max_tokens, 16000);
-  assert.ok(!("stream_options" in r.body) && !("max_completion_tokens" in r.body));
+  assert.deepEqual(r.body.stream_options, { include_usage: true }, "usage at the end, for the token count");
+  assert.ok(!("max_completion_tokens" in r.body));
   assert.ok(!JSON.stringify(r.body).includes("image_url"));
   assert.match(r.body.messages.at(-1).content, /doesn't take pictures/);
   assert.deepEqual(events(res).at(-1).t, "done");
   leaks();
+});
+
+test("xAI turning the usage option down: asked once more without it, and without it from then on", async () => {
+  await copilot.setConfig({ provider: "xai", model: "grok-4" });
+  let refused = 0;
+  reply = (r) =>
+    r.url === "/v1/chat/completions" &&
+    r.body.stream_options &&
+    ((res) => {
+      refused++;
+      res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ code: "Client specified an invalid argument", error: "Unknown field: stream_options" }));
+    });
+  const ask = () => {
+    const res = fakeRes();
+    return step({ messages: [{ role: "user", content: "Hi" }] }, res).then(() => res);
+  };
+  const first = seen.length;
+  assert.equal(events(await ask()).at(-1).t, "done");
+  assert.equal(refused, 1);
+  assert.equal(seen.length - first, 2);
+  assert.ok(!("stream_options" in seen.at(-1).body));
+  assert.equal(events(await ask()).at(-1).t, "done");
+  assert.equal(refused, 1, "the second time it isn't sent at all");
+  reply = () => null;
+  oai.noUsage.clear();
 });
 
 test("a model that turns a picture down: asked once more without it, and text only from then on", async () => {

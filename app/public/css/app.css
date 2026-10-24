@@ -1672,6 +1672,9 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .am-toggle i.on { background: var(--accent); border-color: var(--accent); }
 .am-toggle i.on::after { left: 16px; background: #fff; }
 .toast-undo { margin-left: 8px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+/* changed in another tab or on another device: Reload or Keep this one, under the words */
+.toast.elsewhere .toast-acts { display: flex; gap: 8px; margin-top: 8px; }
+.toast.elsewhere .toast-undo { margin-left: 0; }
 /* cursor styles over the charts (the cursor menu on the drawing bar) */
 body.cur-cross .pane .chart, body.cur-cross .pane .chart * { cursor: crosshair !important; }
 body.cur-dot .pane .chart, body.cur-dot .pane .chart * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Ccircle cx='6' cy='6' r='3.2' fill='%23ffffff' stroke='%23131722' stroke-width='1.2'/%3E%3C/svg%3E") 6 6, crosshair !important; }
@@ -1717,6 +1720,7 @@ body.cur-eraser .pane .chart, body.cur-eraser .pane .chart * { cursor: url("data
 .cs-nav button.on { background: var(--panel-2); font-weight: 600; }
 .cs-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cs-nav svg { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.cs-nav svg .fill { fill: currentColor; stroke: none; }
 .cs-page { flex: 1; min-width: 0; overflow: auto; padding: 0 20px 18px 4px; }
 .cs-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 22px; row-gap: 11px; align-items: center; }
 .cs-l.span { grid-column: 1 / -1; }

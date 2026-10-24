@@ -12,6 +12,8 @@ const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const NO_PICTURES = "\n(A picture of the chart was taken, but this model doesn't take pictures.)";
 
 const responses = (c) => c.provider.id === "openai";
+// providers that turned down stream_options (lib/agent.js finds out): their answers come without a token count
+export const noUsage = new Set();
 
 // The guide and the chart snapshot, one system text
 export const systemText = (blocks) => blocks.map((b) => b.text).join("\n\n");
@@ -112,7 +114,7 @@ export function toResponses(messages, { images = true } = {}) {
 }
 
 // One request. OpenAI: nothing stored on its side, and usage comes at the end anyway. xAI documents
-// max_tokens, and nothing more is sent.
+// max_tokens, and sends usage at the end only when asked (stream_options, as OpenAI's chat completions).
 export function request(c, { system, messages, tools, images = true }) {
   const headers = { authorization: `Bearer ${c.key}`, "content-type": "application/json" };
   if (responses(c)) {
@@ -121,6 +123,7 @@ export function request(c, { system, messages, tools, images = true }) {
     return { url: `${c.base}/v1/responses`, headers, body };
   }
   const body = { model: c.model, messages: [{ role: "system", content: systemText(system) }, ...fromAnthropic(messages, { images })], stream: true, max_tokens: MAX_TOKENS };
+  if (!noUsage.has(c.provider.id)) body.stream_options = { include_usage: true };
   if (tools) body.tools = toolsFor(tools, c);
   return { url: `${c.base}/v1/chat/completions`, headers, body };
 }
