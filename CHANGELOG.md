@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.15 (2026-10-24)
+
+The Kraken history updates every hour again, and Market data can add coins in any currency, download a coin as CSV and shrink the store after a Remove.
+
+- The Kraken history updates every hour again, and Market data's requests (Update now, Add, Remove) run when you
+  ask. When AskCharts started the importer it stayed running after its work was done, so after the first run
+  following a restart nothing else could start. If your Market data has said "Waiting to start" for a while,
+  that's why, and it runs once you update.
+- Add coin offers every pair Kraken lists, in whatever currency it's quoted in (EUR, USDT, BTC, GBP and the rest),
+  not only USD. The coin list shows them by their usual names, like XRP/EUR or ETH/BTC.
+- Each stored coin has a download link that gives its bars as a CSV file, at the finest interval kept (1 minute
+  for Kraken). The columns are the ones the app's own CSV import reads, so a file can go straight back in.
+- Removing a coin gives its space back when it frees 100 MB or more. Before, the bars were deleted but the store
+  file kept its size. Market data says how much it shrank, and if the disk doesn't have room for the rewrite it
+  says so and leaves the file alone.
+- If you run a second copy of AskCharts that reads the first one's history store, `QT_HISTORY_JOBS=off` on that
+  copy makes its Market data read only, so its buttons can't start jobs on the other copy's store.
+
 ## 0.1.14 (2026-10-23)
 
 The chart's right edge stays tight after you pick a date range, and images and tables now resize by their corners.

@@ -532,7 +532,36 @@ async function addPair(db, pair) {
   await bulk(db, [pair], true);
   await update(db, [pair], { now: true });
 }
-function removePair(db, pair) {
+// ---- the store gets smaller after a coin goes: SQLite keeps freed pages in the file for reuse, so it only
+// shrinks when VACUUM rewrites it. That needs about twice the store free for a moment (the copy, then a
+// WAL as big again) and takes a minute or so on a few GB; the app keeps reading meanwhile. Only worth it
+// when a good amount was freed.
+const SHRINK_MIN = 100e6;
+const storeBytes = () => ["", "-wal"].reduce((t, x) => t + (fs.existsSync(DB_FILE + x) ? fs.statSync(DB_FILE + x).size : 0), 0);
+const gb = (b) => `${(b / 1e9).toFixed(b < 1e10 ? 2 : 1)} GB`;
+export function shrink(db, { min = SHRINK_MIN, pair } = {}) {
+  const page = db.prepare("PRAGMA page_size").get().page_size,
+    freed = page * db.prepare("PRAGMA freelist_count").get().freelist_count;
+  if (freed < min) return null;
+  const before = storeBytes();
+  try {
+    diskCheck((2 * before) / 1e9);
+  } catch (e) {
+    log(`the store keeps its size: ${e.message}`);
+    return { before, skipped: e.message };
+  }
+  noteJob({ pair, kind: "shrink", note: `shrinking the store (${gb(before)})` });
+  db.exec("VACUUM");
+  // the WAL holds the rewritten store until a checkpoint copies it back; truncated, the file is the size
+  db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+  const after = storeBytes();
+  log(`the store went from ${gb(before)} to ${gb(after)}`);
+  return { before, after };
+}
+
+// A coin out: its bars, its series and its place in the settings, then the store shrinks. Returns what
+// the Market data page reports.
+export function removePair(db, pair) {
   const ids = db.prepare("SELECT id FROM series WHERE exchange = 'KRAKEN' AND symbol = ?").all(pair).map((r) => r.id);
   db.exec("BEGIN");
   try {
@@ -549,6 +578,9 @@ function removePair(db, pair) {
   saveSettings(set);
   status((s) => delete ((s.kraken ||= {}).pairs ||= {})[pair]);
   log(`${pair}: removed`);
+  const r = shrink(db, { pair });
+  if (!r) return "removed";
+  return r.skipped ? `removed; the store keeps its size (${r.skipped})` : `removed; the store went from ${gb(r.before)} to ${gb(r.after)}`;
 }
 
 // ---- jobs from the Market data page: data/jobs/<time>-<id>.json, each taken off the queue before it runs
@@ -572,7 +604,7 @@ export async function jobs(db) {
       log(`job ${job.cmd}${job.pair ? ` ${job.pair}` : ""}`);
       if (job.cmd === "update") await update(db, settings().kraken.pairs, { now: true });
       else if (job.cmd === "add") await addPair(db, job.pair);
-      else if (job.cmd === "remove") removePair(db, job.pair);
+      else if (job.cmd === "remove") message = removePair(db, job.pair);
       else if (job.cmd === "verify") await verify(db, settings().kraken.pairs);
       else if (job.cmd === "gaps") await gaps(db, settings().kraken.pairs);
       else if (job.cmd === "automatic") {
@@ -634,8 +666,13 @@ async function lock(wait) {
 // ---- command line (only when run, not when the tests import the helpers above). The path compare
 // works on Windows too (C:\... against file:///C:/...).
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  // started by AskCharts' runner: stop with it, even if it's killed outright
-  if (process.send) process.on("disconnect", () => process.exit(0));
+  // started by AskCharts' runner: stop with it, even if it's killed outright. A 'disconnect' listener
+  // keeps the channel, and so this process, alive after the work is done, and the runner starts no new
+  // run (hourly, or a Market data request) while this one is alive: the channel is unref'd.
+  if (process.send) {
+    process.on("disconnect", () => process.exit(0));
+    process.channel?.unref();
+  }
   const [cmd, ...rest] = process.argv.slice(2);
   const flags = new Set(rest.filter((x) => x.startsWith("--")));
   const named = rest.filter((x) => !x.startsWith("--"));

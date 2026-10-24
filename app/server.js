@@ -441,7 +441,29 @@ async function handle(req, res) {
     // ---------- Settings, Market data: the history store's status, and requests for its importer ----------
     if (p === "/api/history/status" && req.method === "GET") return send(res, 200, history.status());
     if (p === "/api/history/jobs" && req.method === "POST") return send(res, 200, history.requestJob(await readBody(req, 1e4)));
-    if (p === "/api/history/pairs" && req.method === "GET") return send(res, 200, await data.krakenUsdPairs());
+    if (p === "/api/history/pairs" && req.method === "GET") return send(res, 200, await data.krakenAddPairs());
+    // A coin's stored bars as a CSV file, the same columns the app's own CSV import reads, so it can
+    // come back in. A plain GET (no x-qt needed): a <a download> link, not a fetch, serves it.
+    if (p === "/api/history/export" && req.method === "GET") {
+      const pair = String(q.pair || "").trim().toUpperCase();
+      if (!/^[A-Z0-9]{2,20}$/.test(pair)) return send(res, 400, { error: "Use Kraken's name for the pair, like XRPUSD" });
+      const exp = history.exportSeries("KRAKEN", pair);
+      if (!exp) return send(res, 404, { error: `${pair} isn't stored on this computer` });
+      let gone = false;
+      res.on("close", () => (gone = true));
+      res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${pair}-${exp.tfSeconds}s.csv"`,
+        "Cache-Control": "no-store",
+      });
+      res.write("time,open,high,low,close,volume\n");
+      for (const page of exp.rows()) {
+        if (gone) break;
+        const chunk = page.map((r) => `${r.t},${r.o},${r.h},${r.l},${r.c},${r.v}\n`).join("");
+        if (!res.write(chunk)) await new Promise((r) => res.once("drain", r));
+      }
+      return res.end();
+    }
     // ---------- Settings, Market data: your own data keys (saved, checked, removed; never sent back) ----------
     if (p === "/api/feeds/keys" && req.method === "GET") return send(res, 200, feeds.keysStatus());
     // Settings, Updates: what AskCharts' runner says, and Check now, Update now and the daily check passed on to it

@@ -574,14 +574,15 @@ const krakenPairs = () =>
     if (j.error?.length) throw new Error(j.error.join(", "));
     return krakenPairMap(j.result);
   }).catch(() => new Map());
-// Kraken's USD pairs, for the Market data page's Add coin: Kraken's own name and the usual one.
-export const krakenUsdPairs = () =>
-  cached("kraken:usd-pairs", 6 * 3600e3, async () => {
+// Kraken's online pairs, for the Market data page's Add coin: Kraken's own name and a readable one
+// ("XRP/EUR", "ETH/BTC"), in whatever currency each is quoted, not USD alone.
+export const krakenAddPairs = () =>
+  cached("kraken:add-pairs", 6 * 3600e3, async () => {
     const j = await getJson("https://api.kraken.com/0/public/AssetPairs");
     if (j.error?.length) throw new Error(j.error.join(", "));
     return Object.values(j.result)
-      .filter((p) => p.wsname?.endsWith("/USD") && p.status === "online")
-      .map((p) => ({ pair: p.altname, name: p.wsname.replace(/^XBT\//, "BTC/").replace(/^XDG\//, "DOGE/") }))
+      .filter((p) => p.wsname && p.status === "online")
+      .map((p) => ({ pair: p.altname, name: p.wsname.replace(/^XBT\//, "BTC/").replace(/^XDG\//, "DOGE/").replace(/\/XBT$/, "/BTC").replace(/\/XDG$/, "/DOGE") }))
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 // Years of Kraken's own bars from the history store (history/ at the repo root), with the API's newest

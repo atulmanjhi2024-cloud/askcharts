@@ -21,9 +21,14 @@ function when(iso, { time = true } = {}) {
 const gb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round((b || 0) / 1e6)} MB`);
 const JOB_WORDS = { update: "Update now", add: "Add", remove: "Remove", verify: "Accuracy check", gaps: "Gap scan", automatic: "Automatic" };
 const COMMON = { XBT: "BTC", XDG: "DOGE" };
+// Kraken's quote currencies, longest first so "USDT"/"USDC" aren't cut short as "USD" (a pair can only
+// end with one of these, so there's no real ambiguity either way).
+const QUOTES = ["USDT", "USDC", "USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CHF", "XBT", "ETH"];
 const common = (pair) => {
-  const m = /^(.+?)(USD)$/.exec(pair);
-  return m ? `${COMMON[m[1]] || m[1]}/USD` : pair;
+  const q = QUOTES.find((x) => pair.length > x.length && pair.endsWith(x));
+  if (!q) return pair;
+  const base = pair.slice(0, -q.length);
+  return `${COMMON[base] || base}/${COMMON[q] || q}`;
 };
 
 export function marketData() {
@@ -91,8 +96,13 @@ export function marketData() {
       h += '<div class="md-wrap">';
       h += `<p class="ai-lead">Years of Kraken's own bars, from each coin's first trade, stored on this computer. KRAKEN charts and the strategy report's backtests use them; the newest bars still come live from Kraken.</p>`;
       h += `<div class="md-state ${this.tone(s)}"><i></i><span>${esc(this.state(s))}</span></div>`;
-      h += `<label class="cs-chk"><input type="checkbox" data-md="auto" ${auto ? "checked" : ""}><span class="cs-box"></span><span>Update automatically, every hour</span></label>`;
-      h += '<div class="md-acts"><button class="btn" data-md="update">Update now</button><button class="btn" data-md="verify">Check accuracy</button><button class="btn" data-md="gaps">Find gaps</button></div>';
+      // a copy reading another's store (QT_HISTORY_JOBS=off): its requests would run there, so none here
+      const ro = s.jobs === false;
+      if (ro) h += `<div class="ai-note">This copy reads the store read only, so Update now, Add and Remove are off here. They run on the copy that keeps the store. Automatic updates are ${auto ? "on" : "off"} there.</div>`;
+      else {
+        h += `<label class="cs-chk"><input type="checkbox" data-md="auto" ${auto ? "checked" : ""}><span class="cs-box"></span><span>Update automatically, every hour</span></label>`;
+        h += '<div class="md-acts"><button class="btn" data-md="update">Update now</button><button class="btn" data-md="verify">Check accuracy</button><button class="btn" data-md="gaps">Find gaps</button></div>';
+      }
       if (st.flash && Date.now() - st.flashAt < 30000) h += `<div class="ai-status ${st.tone}">${esc(st.flash)}</div>`;
       // the facts, in TradingView's two-column rows
       const fact = (l, r) => `<div class="md-k">${l}</div><div class="md-v">${r}</div>`;
@@ -108,7 +118,7 @@ export function marketData() {
       if (s.disk) f += fact("Disk", `Store ${gb(s.disk.storeBytes)}, downloads ${gb(s.disk.rawBytes)}. ${gb(s.disk.freeBytes)} free; imports stop below ${s.disk.minFreeGB} GB.`);
       h += `<div class="md-facts">${f}</div>`;
       // the coins
-      h += '<div class="md-sub">Coins</div><table class="md-coins"><thead><tr><th>Coin</th><th>From</th><th>Through</th><th>Check</th><th></th></tr></thead><tbody>';
+      h += '<div class="md-sub">Coins</div><table class="md-coins"><thead><tr><th>Coin</th><th>From</th><th>Through</th><th>Check</th><th></th><th></th></tr></thead><tbody>';
       for (const c of coins) {
         const p = k.pairs[c] || {},
           v = p.verify;
@@ -121,20 +131,24 @@ export function marketData() {
               : v.ok
                 ? '<span class="md-good">Matches</span>'
                 : '<span class="md-bad">Differs</span>';
-        const rm = removing.has(c) ? "" : `<button class="md-rm" data-md="remove" data-pair="${esc(c)}" title="Remove ${esc(c)} and its stored bars">×</button>`;
-        h += `<tr><td><b>${esc(common(c))}</b> <span class="muted">${esc(c)}</span></td><td>${p.first ? esc(when(p.first, { time: false })) : "…"}</td><td>${p.last1m ? esc(when(p.last1m)) : "…"}</td><td>${chk}</td><td>${rm}</td></tr>`;
-        if (p.error) h += `<tr class="md-err"><td colspan="5">${esc(when(p.error.at))}: ${esc(p.error.message)}</td></tr>`;
+        const rm = removing.has(c) || ro ? "" : `<button class="md-rm" data-md="remove" data-pair="${esc(c)}" title="Remove ${esc(c)} and its stored bars">×</button>`;
+        // a plain GET link (no x-qt needed): downloads what's stored, finest grain first (Kraken's archives: 1 minute)
+        const dl = p.first ? `<a class="md-dl" href="/api/history/export?pair=${esc(c)}" download title="Download ${esc(c)}'s stored bars as CSV">⬇</a>` : "";
+        h += `<tr><td><b>${esc(common(c))}</b> <span class="muted">${esc(c)}</span></td><td>${p.first ? esc(when(p.first, { time: false })) : "…"}</td><td>${p.last1m ? esc(when(p.last1m)) : "…"}</td><td>${chk}</td><td>${dl}</td><td>${rm}</td></tr>`;
+        if (p.error) h += `<tr class="md-err"><td colspan="6">${esc(when(p.error.at))}: ${esc(p.error.message)}</td></tr>`;
       }
-      for (const c of adding) h += `<tr><td><b>${esc(common(c))}</b> <span class="muted">${esc(c)}</span></td><td>…</td><td>…</td><td><span class="muted">Adding</span></td><td></td></tr>`;
+      for (const c of adding) h += `<tr><td><b>${esc(common(c))}</b> <span class="muted">${esc(c)}</span></td><td>…</td><td>…</td><td><span class="muted">Adding</span></td><td></td><td></td></tr>`;
       h += "</tbody></table>";
-      const opts = (st.pairs || []).filter((p) => !coins.includes(p.pair)).map((p) => `<option value="${esc(p.pair)}">${esc(p.name)}</option>`).join("");
-      h += `<div class="md-add"><input class="cs-num ai-in" data-md="pair" list="md-pairs" placeholder="Add a coin: Kraken's name, like ATOMUSD" autocomplete="off" spellcheck="false" value="${esc(st.add)}"><datalist id="md-pairs">${opts}</datalist><button class="btn" data-md="add">Add coin</button></div>`;
-      h += `<div class="ai-sub md-tight">Kraken's archive has every coin from its first trade. Adding one takes about a minute, then its trades since the archive, at Kraken's pace (an hour or more for a busy coin).</div>`;
+      const opts = ro ? "" : (st.pairs || []).filter((p) => !coins.includes(p.pair)).map((p) => `<option value="${esc(p.pair)}">${esc(p.name)}</option>`).join("");
+      if (!ro) {
+        h += `<div class="md-add"><input class="cs-num ai-in" data-md="pair" list="md-pairs" placeholder="Add a coin: Kraken's name, like ATOMUSD or XRPEUR" autocomplete="off" spellcheck="false" value="${esc(st.add)}"><datalist id="md-pairs">${opts}</datalist><button class="btn" data-md="add">Add coin</button></div>`;
+        h += `<div class="ai-sub md-tight">Kraken's archive has every coin from its first trade. Adding one takes about a minute, then its trades since the archive, at Kraken's pace (an hour or more for a busy coin).</div>`;
+      }
       h += "</div>";
       h += this.xrpl();
       h += '<div class="cs-sec">OTHER MARKETS</div>';
       h += `<div class="md-wrap"><p class="ai-lead">Binance, Coinbase, stocks and ETFs aren't stored yet: their charts use each source's own feed (Binance and Coinbase give up to 20,000 bars).</p>`;
-      h += `<p class="ai-note">Actions here start right away; Cancel doesn't undo them. Removing a coin deletes its bars, but the store file keeps its size on disk.</p></div>`;
+      h += `<p class="ai-note">Actions here start right away; Cancel doesn't undo them. Removing a coin deletes its bars and shrinks the store file, which needs about twice the store's size free for a moment.</p></div>`;
       return h;
     },
     // XRPL On chain: on or off, the server, and what the collector has
@@ -182,6 +196,9 @@ export function marketData() {
       if (!k.automatic) return "Automatic updates are off. Update now still works.";
       if (k.lastOk && Date.now() - Date.parse(k.lastOk) > 3 * 3600e3) return `No update since ${when(k.lastOk)}. Is the hourly timer running?`;
       if (k.lastJob && Date.now() - Date.parse(k.lastJob.at) < 600e3 && !k.lastJob.ok) return `${JOB_WORDS[k.lastJob.cmd] || "The last request"} failed: ${k.lastJob.message}`;
+      // what a Remove did to the store's size, for a while after
+      if (k.lastJob?.ok && k.lastJob.cmd === "remove" && /^removed/.test(k.lastJob.message || "") && Date.now() - Date.parse(k.lastJob.at) < 600e3)
+        return `Remove ${k.lastJob.pair}: ${k.lastJob.message}.`;
       return k.lastOk ? `Up to date. Last update ${when(k.lastOk)}.` : "Waiting for the first update.";
     },
     // keep the page still while a coin is being typed
@@ -261,7 +278,7 @@ export function marketData() {
         else if (act === "gaps") after({ cmd: "gaps" }, "Asked for a gap scan of the last 30 days.");
         else if (act === "remove") {
           const pair = b.dataset.pair;
-          if (!confirm(`Remove ${common(pair)} (${pair})? Its stored bars are deleted; its charts go back to Kraken's last 720 bars. Adding it again re-imports them.`)) return;
+          if (!confirm(`Remove ${common(pair)} (${pair})? Its stored bars are deleted and the store file shrinks; its charts go back to Kraken's last 720 bars. Adding it again re-imports them.`)) return;
           after({ cmd: "remove", pair }, `Removing ${pair}.`);
         } else if (act === "add") {
           const pair = pairOf(st.add);

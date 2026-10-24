@@ -70,6 +70,32 @@ function storedFor(exchange, ticker) {
 
 export const covers = (exchange, ticker) => !!storedFor(exchange, ticker);
 
+// ---------- Settings, Market data: download a coin's stored bars as CSV ----------
+// 5,000 bars a page (one short read each), the CSV import's own columns, at the finest interval kept
+// (Kraken's archives: 1 minute), so the file a coin's Download button gives can be imported back.
+const EXPORT_PAGE = 5000;
+export function exportSeries(exchange, ticker, { page = EXPORT_PAGE } = {}) {
+  const s = storedFor(exchange, ticker);
+  if (!s) return null;
+  const series = s.series[0]; // storedFor orders series by tf ascending: this is the finest one stored
+  return {
+    symbol: s.symbol,
+    tfSeconds: series.tf,
+    *rows() {
+      const d = store();
+      let after = -Infinity;
+      for (;;) {
+        const chunk = d
+          .prepare("SELECT t, o, h, l, c, v FROM bars WHERE series = ? AND t > ? ORDER BY t LIMIT ?")
+          .all(series.id, after, page);
+        if (!chunk.length) return;
+        yield chunk;
+        after = chunk[chunk.length - 1].t;
+      }
+    },
+  };
+}
+
 // The last `limit` bars of `tf` from the store: stored as they are, or built from the largest stored
 // interval that divides it (30m from 15m, 1W from 1D). Null when the store doesn't have the symbol.
 export function bars(exchange, ticker, tf, limit) {
@@ -134,6 +160,10 @@ function queued() {
   }
 }
 
+// A copy that reads another copy's store (my dev reads prod's) must not queue jobs for that store's
+// importer: they would run there. QT_HISTORY_JOBS=off makes Market data read only.
+const jobsOff = () => process.env.QT_HISTORY_JOBS === "off";
+
 // Everything the Market data page shows: the importer's status.json, the settings, the waiting requests.
 export function status() {
   const st = readJson(STATUS, {}),
@@ -148,6 +178,7 @@ export function status() {
     disk: st.disk ?? null,
     kraken: { ...k, pairs: k.pairs || {}, coins: set?.kraken?.pairs ?? Object.keys(k.pairs || {}), automatic: set?.kraken?.automatic ?? k.automatic ?? configAutomatic() },
     queued: queued(),
+    jobs: !jobsOff(),
   };
 }
 
@@ -175,6 +206,7 @@ export function health() {
 const JOB_CMDS = new Set(["update", "add", "remove", "verify", "gaps", "automatic"]);
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 export function requestJob(body) {
+  if (jobsOff()) throw Object.assign(new Error("This copy reads the history store read only. Its actions run on the copy that keeps the store."), { status: 403 });
   const cmd = String(body?.cmd || "");
   if (!JOB_CMDS.has(cmd)) throw bad("Not a Market data action");
   const job = { cmd, at: new Date().toISOString() };

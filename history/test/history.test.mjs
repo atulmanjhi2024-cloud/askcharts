@@ -125,3 +125,52 @@ test("jobs from the page: each taken off the queue, bad ones refused, Automatic 
   assert.equal(d.prepare("SELECT COUNT(*) AS n FROM bars").get().n, 0);
   d.close();
 });
+
+// Prod's runner starts the importer with a message channel and starts no new run while one is alive. A
+// listener on that channel kept every importer alive after its work: one update per restart (23 Oct).
+test("started with a message channel, as AskCharts' runner does, the importer exits when its work is done", async () => {
+  const { spawn } = await import("node:child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "history-ipc-"));
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, "..", "kraken.mjs"), "status"], { env: { ...process.env, HISTORY_DATA: dir }, stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  const exited = await Promise.race([new Promise((r) => child.on("exit", (code) => r({ code }))), new Promise((r) => setTimeout(() => r(null), 10000))]);
+  if (!exited) child.kill();
+  assert.ok(exited, "still running 10 seconds after its work");
+  assert.equal(exited.code, 0);
+});
+
+// Removing a coin used to leave the store file its size (SQLite keeps freed pages for reuse); now it shrinks
+// when enough was freed and the disk has room for the rewrite, and the other coins come through whole.
+test("removing a coin shrinks the store when it's worth it and the disk has room", () => {
+  const d = db.openDb();
+  const src = db.sourceId(d, "test");
+  const fill = (pair, n) => {
+    const s = db.seriesId(d, "KRAKEN", pair, 60);
+    const rows = [];
+    for (let i = 0; i < n; i++) rows.push({ t: 60 * i, o: 1 + i / 1e6, h: 2, l: 0.5, c: 1.5, v: 1000 + i, n: 3 });
+    db.upsertBars(d, s, src, rows);
+  };
+  fill("AAAUSD", 150000);
+  fill("BBBUSD", 50000);
+  d.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  const size = () => fs.statSync(db.DB_FILE).size + (fs.existsSync(`${db.DB_FILE}-wal`) ? fs.statSync(`${db.DB_FILE}-wal`).size : 0);
+  const full = size();
+  // a few MB freed is under the 100 MB that makes a rewrite worth it: removed, the file kept
+  assert.equal(k.removePair(d, "AAAUSD"), "removed");
+  d.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  assert.ok(size() >= full * 0.95, `${size()} of ${full}`);
+  // no room on the disk (a floor far above what's free): it says so and keeps the file
+  const set = db.readJson(db.SETTINGS_FILE, {});
+  db.writeJson(db.SETTINGS_FILE, { ...set, minFreeGB: 1e9 });
+  const skipped = k.shrink(d, { min: 1 });
+  assert.match(skipped.skipped, /not enough disk space/);
+  db.writeJson(db.SETTINGS_FILE, set);
+  // room, and over the threshold: the file shrinks, the other coin's bars are all there, the store checks out
+  const r = k.shrink(d, { min: 1 });
+  assert.ok(r.after < r.before * 0.6, `${r.before} to ${r.after}`);
+  assert.ok(size() < full * 0.6);
+  assert.equal(d.prepare("SELECT COUNT(*) AS n FROM bars WHERE series = (SELECT id FROM series WHERE symbol = 'BBBUSD')").get().n, 50000);
+  assert.equal(d.prepare("SELECT COUNT(*) AS n FROM series WHERE symbol = 'AAAUSD'").get().n, 0);
+  assert.equal(d.prepare("PRAGMA quick_check").get().quick_check, "ok");
+  d.close();
+});
+
