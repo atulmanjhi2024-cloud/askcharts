@@ -26,7 +26,7 @@ evenly across it. On 1 and 5 second charts that puts about one ledger per bar.
 
 A public server (Ripple's `wss://s1.ripple.com` by default) sends about 600 KB per ledger, about 15 GB a day.
 xrplcluster.com's free allowance is less than that, so it can't keep up with every ledger. If you run your
-own XRP Ledger node, point Market data at its WebSocket address instead. The collector fills
+own XRP Ledger node, point On chain data at its WebSocket address instead. The collector fills
 in the last day, then keeps 90 days.
 
 ## Files and commands

@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qt-onchain-"));
 const file = path.join(dir, "xrpl.sqlite");
 process.env.QT_ONCHAIN = file;
-const { xrpl, XRPL_COLS, DEX_COLS } = await import("../lib/onchain.js");
+const { xrpl, XRPL_COLS, DEX_COLS, settings, saveSettings } = await import("../lib/onchain.js");
 
 test("no store yet: empty, with the reason", () => {
   const r = xrpl({ from: 0, to: 100, step: 60 });
@@ -64,4 +64,29 @@ test("a store with the DEX columns: summed where counted, how many were counted,
   assert.equal(r.buckets[0][1], 4);
   assert.equal(r.dexFirst, T + 30);
   fs.rmSync(dir, { recursive: true });
+});
+
+test("On chain data's settings: off with Ripple's server until set; a server only when one is given; the old default reads as none", () => {
+  delete process.env.QT_ONCHAIN_SETTINGS;
+  assert.deepEqual([settings().enabled, settings().server, settings().history, settings().readOnly], [false, "wss://s1.ripple.com", true, undefined]);
+  saveSettings({ enabled: true });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8")), { enabled: true, history: true });
+  assert.equal(saveSettings({ enabled: true, server: "ws://node.example:6006" }).server, "ws://node.example:6006");
+  assert.throws(() => saveSettings({ enabled: true, server: "https://example.org" }), /WebSocket address/);
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ enabled: true, server: "wss://xrplcluster.com" }));
+  assert.equal(settings().server, "wss://s1.ripple.com");
+});
+
+test("a copy that only reads another's store (QT_ONCHAIN_SETTINGS=off): settings shown, never changed", () => {
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ enabled: true, server: "ws://node.example:6006", history: true }));
+  process.env.QT_ONCHAIN_SETTINGS = "off";
+  try {
+    const s = settings();
+    assert.equal(s.readOnly, true);
+    assert.equal(s.server, "ws://node.example:6006");
+    assert.throws(() => saveSettings({ enabled: false }), (e) => e.status === 403 && /read only/.test(e.message));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8")), { enabled: true, server: "ws://node.example:6006", history: true });
+  } finally {
+    delete process.env.QT_ONCHAIN_SETTINGS;
+  }
 });

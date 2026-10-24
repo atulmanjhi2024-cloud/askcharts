@@ -1200,7 +1200,7 @@ class App {
     this.healthKey = key;
     this.panels?.notice?.(text, key ? "warn" : "ok");
   }
-  // The history store (Settings, Market data): two failed updates in a row, or none for three hours
+  // The history store (Settings, Crypto data): two failed updates in a row, or none for three hours
   // with Automatic on, go to Notifications once, and once more when it's updating again.
   historyNotice(hs) {
     const key = !hs ? "" : hs.failures >= 2 ? "fail" : hs.stale ? "stale" : "";
@@ -1208,9 +1208,9 @@ class App {
     const was = this.historyKey;
     this.historyKey = key;
     if (key === "fail")
-      this.panels?.notice?.(`Kraken history: the last ${hs.failures} updates failed (${hs.lastError?.message || "no reason given"}). Charts still work, but their stored bars stop at the last good update. Settings, Market data has the details.`);
+      this.panels?.notice?.(`Kraken history: the last ${hs.failures} updates failed (${hs.lastError?.message || "no reason given"}). Charts still work, but their stored bars stop at the last good update. Settings, Crypto data has the details.`);
     else if (key === "stale")
-      this.panels?.notice?.(`Kraken history hasn't updated since ${new Date(hs.since).toLocaleString()}. Settings, Market data has the details.`);
+      this.panels?.notice?.(`Kraken history hasn't updated since ${new Date(hs.since).toLocaleString()}. Settings, Crypto data has the details.`);
     else if (was) this.panels?.notice?.("Kraken history is updating again.", "ok");
   }
   setStatus(level, title) {

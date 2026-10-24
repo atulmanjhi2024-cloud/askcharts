@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.19 (2026-10-24)
+
+Stock data comes first among the data tabs in Settings: Stock data, Crypto data, then On chain data.
+
+## 0.1.18 (2026-10-24)
+
+The data tabs in Settings are named for the market each one serves: Crypto data, On chain data and Stock data.
+
+- Market data is now Crypto data, and Data keys is now Stock data, with On chain data between them. Each tab
+  says which market it's for, so someone who only trades crypto can tell Stock data isn't needed, and later
+  sources have an obvious home (Binance and Coinbase history in Crypto data, Alpaca stock history in Stock data).
+  Your saved keys and the Kraken history stay where they were.
+- Crypto data no longer links to the keys at its bottom; Stock data opens on live US stock prices and says that
+  stock and ETF history isn't stored on this computer yet.
+- A copy of AskCharts that only reads another copy's XRP Ledger store can set `QT_ONCHAIN_SETTINGS=off`. Its
+  On chain data then shows the status and what's set, with no switches, and refuses a save, so it can't move the
+  other copy's collector. It's the On chain match for `QT_HISTORY_JOBS=off` in Crypto data.
+
 ## 0.1.17 (2026-10-24)
 
 AskCharts AI works with OpenAI and xAI as well as Anthropic, and XRPL On chain has a Settings tab of its own.

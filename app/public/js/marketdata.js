@@ -1,4 +1,4 @@
-// Settings, Market data: the history store that gives KRAKEN charts and the strategy report's deep
+// Settings, Crypto data: the history store that gives KRAKEN charts and the strategy report's deep
 // backtests years of Kraken's own bars (history/ at the repo root). The page shows what the importer
 // last did and asks it for more: Update now, Automatic, a coin in or out, an accuracy check, a gap scan.
 // The importer runs those outside the app (AskCharts' runner starts it), so they carry on through a restart.
@@ -72,7 +72,7 @@ export function marketData() {
     html() {
       const s = st.s;
       let h = '<div class="cs-sec">KRAKEN (CRYPTO)</div>';
-      if (!s) return `${h}<div class="cs-l span">${st.err ? `Market data isn't available: ${esc(st.err)}` : "Loading…"}</div>`;
+      if (!s) return `${h}<div class="cs-l span">${st.err ? `Crypto data isn't available: ${esc(st.err)}` : "Loading…"}</div>`;
       // nothing downloaded yet: offer it (a big first download, so it's never started for you). An empty
       // store counts as nothing: the importer makes one the first time it runs for any reason.
       const none = !s.available || !(s.kraken?.coins || []).some((c) => s.kraken.pairs?.[c]?.first);
@@ -143,8 +143,8 @@ export function marketData() {
         h += `<div class="ai-sub md-tight">Kraken's archive has every coin from its first trade. Adding one takes about a minute, then its trades since the archive, at Kraken's pace (an hour or more for a busy coin).</div>`;
       }
       h += "</div>";
-      h += '<div class="cs-sec">OTHER MARKETS</div>';
-      h += `<div class="md-wrap"><p class="ai-lead">Binance, Coinbase, stocks and ETFs aren't stored yet: their charts use each source's own feed (Binance and Coinbase give up to 20,000 bars).</p>`;
+      h += '<div class="cs-sec">OTHER EXCHANGES</div>';
+      h += `<div class="md-wrap"><p class="ai-lead">Binance and Coinbase aren't stored yet: their charts use each exchange's own feed, up to 20,000 bars.</p>`;
       h += `<p class="ai-note">Actions here start right away; Cancel doesn't undo them. Removing a coin deletes its bars and shrinks the store file, which needs about twice the store's size free for a moment.</p></div>`;
       return h;
     },

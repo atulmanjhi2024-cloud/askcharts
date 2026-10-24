@@ -1,6 +1,7 @@
 // Settings, On chain data: XRPL On chain on or off, the server its collector follows, the shared history,
 // and what the collector has stored. The collector runs outside the app (AskCharts' runner starts it, and
 // restarts it within a few seconds of a change here), so this page only reads its status and saves settings.
+// A copy that reads another copy's store shows it all with the controls off (readOnly, QT_ONCHAIN_SETTINGS=off).
 import { api, esc } from "./api.js";
 import { when } from "./marketdata.js";
 
@@ -52,21 +53,25 @@ export function onchainData() {
                 : ["ok", `Following the ledger${c.toFill ? `, ${c.toFill.toLocaleString("en-US")} older ledger${c.toFill === 1 ? "" : "s"} still to fill in` : ""}.`];
       h += `<p class="ai-lead">The XRP Ledger's activity and payments, ledger by ledger, for the XRPL indicators under Indicators, On chain. Kept for 90 days on this computer.</p>`;
       h += `<div class="md-state ${state[0]}"><i></i><span>${esc(state[1])}</span></div>`;
+      const sh = c?.history;
+      const shared = !o.history ? "" : sh?.error ? `Couldn't read it last time (${sh.error})` : sh?.newest ? `Filled in up to ${when(new Date(sh.newest * 1000).toISOString())}` : "";
+      const facts = (rows) => (rows.length ? `<div class="md-facts">${rows.map(([k, v]) => `<div class="md-k">${k}</div><div class="md-v">${esc(v)}</div>`).join("")}</div>` : "");
+      const kept = [
+        ...(o.stored ? [["Stored", `${o.stored.ledgers.toLocaleString("en-US")} ledgers, ${when(new Date(o.stored.from * 1000).toISOString())} to ${when(new Date(o.stored.to * 1000).toISOString())}`]] : []),
+        ...(shared ? [["Shared history", shared]] : []),
+      ];
+      // a copy that only reads another's store: what's set there, and no switches
+      if (o.readOnly) {
+        h += '<div class="ai-note">This copy reads the XRP Ledger store read only, so its switches and server are off here. They\'re set on the copy that runs the collector.</div>';
+        return `${h}${facts([["Following", o.enabled ? "On" : "Off"], ["Server", o.server], ["Fill in history", o.history ? "From askcharts.pro" : "Off"], ...kept])}</div>`;
+      }
       h += `<label class="cs-chk"><input type="checkbox" data-oc="xrpl" ${o.enabled ? "checked" : ""}><span class="cs-box"></span><span>Follow the XRP Ledger</span></label>`;
       h += `<div class="md-add"><input class="cs-num ai-in" data-oc="server" placeholder="wss://s1.ripple.com" autocomplete="off" spellcheck="false" value="${esc(st.server ?? o.server)}"><button class="btn" data-oc="save">Save server</button></div>`;
       h += `<div class="ai-sub md-tight">A public server sends about 15 GB a day to follow every ledger. If you run your own XRP Ledger node, put its WebSocket address here instead.</div>`;
       h += `<label class="cs-chk"><input type="checkbox" data-oc="history" ${o.history ? "checked" : ""}><span class="cs-box"></span><span>Fill in history from askcharts.pro</span></label>`;
       h += `<div class="ai-sub md-tight">Up to 90 days of ledgers from data.askcharts.pro when the collector starts, about 0.5 MB a day, every file signed and checked. Without it, the collector fills in one day back, ledger by ledger, from the server above. It only downloads; nothing is sent.</div>`;
       if (st.flash && Date.now() - st.flashAt < 30000) h += `<div class="ai-status ${st.tone}">${esc(st.flash)}</div>`;
-      const sh = c?.history;
-      const shared = !o.history ? "" : sh?.error ? `Couldn't read it last time (${sh.error})` : sh?.newest ? `Filled in up to ${when(new Date(sh.newest * 1000).toISOString())}` : "";
-      if (o.stored || shared) {
-        h += '<div class="md-facts">';
-        if (o.stored) h += `<div class="md-k">Stored</div><div class="md-v">${o.stored.ledgers.toLocaleString("en-US")} ledgers, ${esc(when(new Date(o.stored.from * 1000).toISOString()))} to ${esc(when(new Date(o.stored.to * 1000).toISOString()))}</div>`;
-        if (shared) h += `<div class="md-k">Shared history</div><div class="md-v">${esc(shared)}</div>`;
-        h += "</div>";
-      }
-      return `${h}</div>`;
+      return `${h}${facts(kept)}</div>`;
     },
     // keep the page still while a server is being typed, and while a typed server isn't saved yet (a
     // redraw between pressing Save and letting go would lose the click)

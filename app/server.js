@@ -438,7 +438,7 @@ async function handle(req, res) {
       if (req.method === "PATCH")
         return send(res, 200, alerts.update(id, await readBody(req)));
     }
-    // ---------- Settings, Market data: the history store's status, and requests for its importer ----------
+    // ---------- Settings, Crypto data: the history store's status, and requests for its importer ----------
     if (p === "/api/history/status" && req.method === "GET") return send(res, 200, history.status());
     if (p === "/api/history/jobs" && req.method === "POST") return send(res, 200, history.requestJob(await readBody(req, 1e4)));
     if (p === "/api/history/pairs" && req.method === "GET") return send(res, 200, await data.krakenAddPairs());
@@ -464,7 +464,7 @@ async function handle(req, res) {
       }
       return res.end();
     }
-    // ---------- Settings, Market data: your own data keys (saved, checked, removed; never sent back) ----------
+    // ---------- Settings, Stock data: your own data keys (saved, checked, removed; never sent back) ----------
     if (p === "/api/feeds/keys" && req.method === "GET") return send(res, 200, feeds.keysStatus());
     // Settings, Updates: what AskCharts' runner says, and Check now, Update now and the daily check passed on to it
     if (p === "/api/updates" && req.method === "GET") return send(res, 200, updates.status());

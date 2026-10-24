@@ -42,7 +42,7 @@ but won't tell you to buy or sell.
 Market data is free and needs no account or key. Crypto comes from Binance, Coinbase and Kraken. US stocks and ETFs
 come from Yahoo and Nasdaq. Forex and some futures are there too (futures about 10 minutes delayed). You can also
 download years of Kraken's own history to your computer. If you have an Alpaca or Polygon (now Massive) account, its
-key gives you live US stock prices (and CME futures, with Polygon): add it in Settings, Data keys.
+key gives you live US stock prices (and CME futures, with Polygon): add it in Settings, Stock data.
 
 ## What you need
 
@@ -104,7 +104,7 @@ Both go in Settings, the gear at the top right. Each key is checked with its pro
    [platform.openai.com](https://platform.openai.com/api-keys) for GPT or [console.x.ai](https://console.x.ai)
    for Grok. You pay the provider directly for what you use. Each provider keeps its own key, so you can switch
    between them without pasting a key again.
-2. **Alpaca key, for live US stock prices (optional).** Settings, Data keys. Paste the key ID and secret key,
+2. **Alpaca key, for live US stock prices (optional).** Settings, Stock data. Paste the key ID and secret key,
    leave the feed on IEX for a free account, and press Save and check. Get the keys from a free account at
    [alpaca.markets](https://alpaca.markets), under API Keys. A Polygon (now Massive) key goes in the same tab.
 
@@ -120,7 +120,7 @@ Without any keys, the charts, data and everything else still work. Only AskChart
 2. **Pick an interval.** Click the interval next to it, or type one on the chart: `5` for 5 minutes, `4h`, `1D`.
 3. **Ask for the rest.** Open AskCharts AI from the robot on the right and say what you want, like "Add RSI and
    a 50 period moving average".
-4. **More history (optional).** Settings, Market data downloads Kraken's full history (about 10 GB), and
+4. **More history (optional).** Settings, Crypto data downloads Kraken's full history (about 10 GB), and
    Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger through a public
    server, which is about 15 GB of downloads a day. When it starts it also fills in up to 90 days of history
    from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't empty. It only

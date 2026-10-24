@@ -5,7 +5,7 @@
 //
 //   node history/kraken.mjs update [PAIR...] [--now]   from each series' last bar to now, then upkeep when
 //                                                     due (hourly timer; --now runs even when Automatic is off)
-//   node history/kraken.mjs jobs                       run what the Market data page asked for (data/jobs/)
+//   node history/kraken.mjs jobs                       run what the Crypto data page asked for (data/jobs/)
 //   node history/kraken.mjs add PAIR | remove PAIR     a coin in or out (archives, then trades and OHLC)
 //   node history/kraken.mjs bulk [PAIR...] [--force]   import data/raw/kraken/Kraken_OHLCVT_*.zip
 //   node history/kraken.mjs verify [PAIR...]           built-from-trades bars against Kraken's own
@@ -15,7 +15,7 @@
 //
 // Pairs default to data/settings.json (made from config.json the first time). Kraken asks public callers
 // to keep to about one request a second, per IP and per pair; the live charts share that, so every call
-// here waits its turn. One writer at a time (data/kraken.lock). Everything the Market data page shows is
+// here waits its turn. One writer at a time (data/kraken.lock). Everything the Crypto data page shows is
 // in data/status.json.
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -51,7 +51,7 @@ function settings() {
 }
 const saveSettings = (s) => writeJson(SETTINGS_FILE, s);
 
-// ---- status.json: what the Market data page shows
+// ---- status.json: what the Crypto data page shows
 function status(update) {
   const s = readJson(STATUS_FILE, {});
   update(s);
@@ -734,7 +734,7 @@ export function shrink(db, { min = SHRINK_MIN, pair } = {}) {
 }
 
 // A coin out: its bars, its series and its place in the settings, then the store shrinks. Returns what
-// the Market data page reports.
+// the Crypto data page reports.
 export function removePair(db, pair) {
   const ids = db.prepare("SELECT id FROM series WHERE exchange = 'KRAKEN' AND symbol = ?").all(pair).map((r) => r.id);
   db.exec("BEGIN");
@@ -757,7 +757,7 @@ export function removePair(db, pair) {
   return r.skipped ? `removed; the store keeps its size (${r.skipped})` : `removed; the store went from ${gb(r.before)} to ${gb(r.after)}`;
 }
 
-// ---- jobs from the Market data page: data/jobs/<time>-<id>.json, each taken off the queue before it runs
+// ---- jobs from the Crypto data page: data/jobs/<time>-<id>.json, each taken off the queue before it runs
 // (so a failing job can't loop) and its result kept in status.json
 const JOBS = new Set(["update", "add", "remove", "verify", "gaps", "automatic"]);
 export async function jobs(db) {
@@ -842,7 +842,7 @@ async function lock(wait) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   // started by AskCharts' runner: stop with it, even if it's killed outright. A 'disconnect' listener
   // keeps the channel, and so this process, alive after the work is done, and the runner starts no new
-  // run (hourly, or a Market data request) while this one is alive: the channel is unref'd.
+  // run (hourly, or a Crypto data request) while this one is alive: the channel is unref'd.
   if (process.send) {
     process.on("disconnect", () => process.exit(0));
     process.channel?.unref();

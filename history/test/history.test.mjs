@@ -1,5 +1,5 @@
 // The history importer's pieces, offline: archive rows, bars from trades, coarser bars, the store's
-// layout and versions, gap finding, and jobs from the Market data page. Run: node --test history/test/history.test.mjs
+// layout and versions, gap finding, and jobs from the Crypto data page. Run: node --test history/test/history.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

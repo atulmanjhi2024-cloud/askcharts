@@ -59,7 +59,7 @@ before each change" in Settings, AskCharts AI.
 
 ## More data
 
-- **Kraken history** (Settings, Market data): years of Kraken's own bars for KRAKEN charts and longer
+- **Kraken history** (Settings, Crypto data): years of Kraken's own bars for KRAKEN charts and longer
   backtests. The first download is about 10 GB.
 - **XRPL On chain** (Settings, On chain data): the XRP Ledger's activity for the indicators under
   Indicators, On chain. Following the ledger through a public server is about 15 GB of downloads a day.
@@ -67,7 +67,7 @@ before each change" in Settings, AskCharts AI.
 Both start off, and nothing big downloads until you turn it on.
 
 - **Your own data keys (optional):** if you have an Alpaca or Polygon (now Massive) account, paste its key in
-  Settings, Data keys and press Save and check. AskCharts asks the provider first and only saves a key
+  Settings, Stock data and press Save and check. AskCharts asks the provider first and only saves a key
   it accepts. Later, the same place checks, replaces or removes it.
 
 ## Where your things are

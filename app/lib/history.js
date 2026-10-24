@@ -3,8 +3,8 @@
 // write it; here it's opened read only, so charts and deep backtests reach past what an exchange's free
 // API returns (Kraken's 720 bars). Override the file with QT_HISTORY.
 //
-// Beside it: status.json (what the importer last did, for Settings, Market data), settings.json (the
-// coins, Automatic) and jobs/, where the Market data page leaves requests for the importer to run.
+// Beside it: status.json (what the importer last did, for Settings, Crypto data), settings.json (the
+// coins, Automatic) and jobs/, where the Crypto data page leaves requests for the importer to run.
 import { DatabaseSync } from "node:sqlite";
 import fs, { existsSync } from "node:fs";
 import path from "node:path";
@@ -70,7 +70,7 @@ function storedFor(exchange, ticker) {
 
 export const covers = (exchange, ticker) => !!storedFor(exchange, ticker);
 
-// ---------- Settings, Market data: download a coin's stored bars as CSV ----------
+// ---------- Settings, Crypto data: download a coin's stored bars as CSV ----------
 // 5,000 bars a page (one short read each), the CSV import's own columns, at the finest interval kept
 // (Kraken's archives: 1 minute), so the file a coin's Download button gives can be imported back.
 const EXPORT_PAGE = 5000;
@@ -130,7 +130,7 @@ function sourceNames() {
   return names.v;
 }
 
-// ---------- Settings, Market data ----------
+// ---------- Settings, Crypto data ----------
 const readJson = (file, fallback) => {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -161,10 +161,10 @@ function queued() {
 }
 
 // A copy that reads another copy's store (my dev reads prod's) must not queue jobs for that store's
-// importer: they would run there. QT_HISTORY_JOBS=off makes Market data read only.
+// importer: they would run there. QT_HISTORY_JOBS=off makes Crypto data read only.
 const jobsOff = () => process.env.QT_HISTORY_JOBS === "off";
 
-// Everything the Market data page shows: the importer's status.json, the settings, the waiting requests.
+// Everything the Crypto data page shows: the importer's status.json, the settings, the waiting requests.
 export function status() {
   const st = readJson(STATUS, {}),
     set = readJson(SETTINGS, null);
@@ -208,7 +208,7 @@ const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 export function requestJob(body) {
   if (jobsOff()) throw Object.assign(new Error("This copy reads the history store read only. Its actions run on the copy that keeps the store."), { status: 403 });
   const cmd = String(body?.cmd || "");
-  if (!JOB_CMDS.has(cmd)) throw bad("Not a Market data action");
+  if (!JOB_CMDS.has(cmd)) throw bad("Not a Crypto data action");
   const job = { cmd, at: new Date().toISOString() };
   if (cmd === "add" || cmd === "remove") {
     job.pair = String(body.pair || "").trim().toUpperCase();

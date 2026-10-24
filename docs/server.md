@@ -91,7 +91,7 @@ Manager) reach your other devices without a link.
 ## 5. Add your keys
 
 In AskCharts: Settings (the gear), AskCharts AI. Pick the provider, paste your key, Test, pick a model, Ok.
-Optional: Settings, Data keys, for an Alpaca or Polygon (Massive) key (live US stock
+Optional: Settings, Stock data, for an Alpaca or Polygon (Massive) key (live US stock
 prices). Keys are kept on your server, in the data volume, and each is only sent to its own provider. Change
 or remove them in the same places whenever you need to.
 

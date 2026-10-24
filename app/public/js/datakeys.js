@@ -1,4 +1,4 @@
-// Settings, Data keys: your own data keys, optional. The free sources need none; an Alpaca or Polygon
+// Settings, Stock data: your own data keys, optional. The free sources need none; an Alpaca or Polygon
 // (now Massive) key gives live prices for US stocks and ETFs (and CME futures, with Polygon) instead of
 // delayed ones, with the free sources behind it. Each key is checked with its provider before it's
 // saved, and the page only ever learns whether one is saved and its last 4 characters (lib/feeds.js).
@@ -25,7 +25,7 @@ export function dataKeys() {
       }
     },
     html() {
-      let h = '<div class="cs-sec">YOUR OWN DATA KEYS (OPTIONAL)</div><div class="md-keys">';
+      let h = '<div class="cs-sec">LIVE US STOCK PRICES (OPTIONAL)</div><div class="md-keys">';
       h += '<p class="ai-lead">AskCharts works with no key: its market data is free. If you have an account with one of these, its key gives you live prices for US stocks and ETFs (and CME futures, with Polygon) instead of delayed ones. The free sources stay behind it.</p>';
       if (!st.s) return `${h}<div class="cs-l span">${st.err ? `Couldn't read the keys: ${esc(st.err)}` : "Loading…"}</div></div>`;
       const a = st.s.alpaca,
@@ -53,7 +53,8 @@ export function dataKeys() {
       h += acts("polygon", p) + flash("polygon");
       h += '<div class="ai-sub md-tight">US stocks, and CME futures (NQ, MNQ, ES, MES) on a futures plan. Live or delayed depends on your plan; the free plan is end of day only.</div>';
 
-      h += '<p class="ai-note">Keys stay on this computer, in a file only this account can read, and each is only ever sent to its own provider. A saved key is never shown again. These actions take effect right away.</p></div>';
+      h += '<p class="ai-note">Keys stay on this computer, in a file only this account can read, and each is only ever sent to its own provider. A saved key is never shown again. These actions take effect right away.</p>';
+      h += '<p class="ai-note">Stock and ETF history isn\'t stored on this computer yet: their charts use each source\'s own feed.</p></div>';
       return h;
     },
     bind(page, redraw) {

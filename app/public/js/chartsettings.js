@@ -1,5 +1,5 @@
 // The chart Settings dialog (the gear at the top right), after TradingView's: Symbol, Status line,
-// Scales and lines, Canvas, Trading, Alerts and Events, plus AskCharts AI, Market data (the history store) and On chain data (XRPL On chain). Changes show on the charts as they're made;
+// Scales and lines, Canvas, Trading, Alerts and Events, plus AskCharts AI, Stock data (your own keys for live US stock prices), Crypto data (the Kraken history store) and On chain data (XRPL On chain). Changes show on the charts as they're made;
 // Cancel, Esc or the close button put everything back, Ok keeps them.
 import { esc, exchange, ticker } from "./api.js";
 import { aiSettings } from "./copilot.js";
@@ -318,9 +318,9 @@ const TABS = [
   ["alerts", "Alerts"],
   ["events", "Events"],
   ["ai", "AskCharts AI"],
-  ["market", "Market data"],
+  ["keys", "Stock data"],
+  ["market", "Crypto data"],
   ["onchain", "On chain data"],
-  ["keys", "Data keys"],
   ["updates", "Updates"],
   ["about", "About"],
 ];
@@ -350,7 +350,7 @@ export function openChartSettings(app, chartTypes, start) {
     if (tab === "ai" && card.isConnected) redraw();
   });
   const page = card.querySelector(".cs-page");
-  // Market data: the history store's status, read every few seconds while its tab is open. The card is
+  // Crypto data: the history store's status, read every few seconds while its tab is open. The card is
   // reused by the next dialog, so it's the page that says whether this one is still open.
   const md = marketData();
   let mdStale = false;
@@ -363,7 +363,7 @@ export function openChartSettings(app, chartTypes, start) {
   oc.load().then(() => {
     if (tab === "onchain" && page.isConnected) redraw();
   });
-  // your own data keys, on their own tab
+  // Stock data: your own keys for live US stock prices
   const dk = dataKeys();
   dk.load().then(() => {
     if (tab === "keys" && page.isConnected) redraw();
@@ -583,9 +583,8 @@ export function openChartSettings(app, chartTypes, start) {
     ai() {
       return ai.html();
     },
-    // and a pointer to Data keys at the bottom, for anyone looking here for live stock prices
     market() {
-      return `${md.html()}<div class="cs-sec">LIVE US STOCK PRICES</div><div class="md-keys"><p class="ai-lead">With your own Alpaca or Polygon key: <button class="md-link" data-cs-goto="keys">Data keys</button>.</p></div>`;
+      return md.html();
     },
     onchain() {
       return oc.html();

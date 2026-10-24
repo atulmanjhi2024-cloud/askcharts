@@ -577,7 +577,7 @@ const krakenPairs = () =>
     if (j.error?.length) throw new Error(j.error.join(", "));
     return krakenPairMap(j.result);
   }).catch(() => new Map());
-// Kraken's online pairs, for the Market data page's Add coin: Kraken's own name and a readable one
+// Kraken's online pairs, for the Crypto data page's Add coin: Kraken's own name and a readable one
 // ("XRP/EUR", "ETH/BTC"), in whatever currency each is quoted, not USD alone.
 export const krakenAddPairs = () =>
   cached("kraken:add-pairs", 6 * 3600e3, async () => {
@@ -606,7 +606,7 @@ async function krakenWithHistory(pair, tf, limit, info = {}) {
   const kept = (stored?.candles || []).filter((b) => b.time < cut);
   const sec = parseTf(tf).seconds;
   if (stored?.last != null && live.length && live[0].time - stored.last > Math.max(3 * sec, 2 * 3600))
-    info.note = `The Kraken history on this computer ends ${utcTime(stored.last)}, so this chart skips from there to ${utcTime(live[0].time)}. It fills in with the next history update (Settings, Market data).`;
+    info.note = `The Kraken history on this computer ends ${utcTime(stored.last)}, so this chart skips from there to ${utcTime(live[0].time)}. It fills in with the next history update (Settings, Crypto data).`;
   const spans = (stored?.sources || []).filter((x) => x.from < cut);
   info.source = spans.length
     ? ["Kraken's own bars, stored on this computer:", ...spans.map((x) => `${sourceLabel(x.name)}: ${utcDay(x.from)} to ${utcDay(Math.min(x.to, cut - 1))}`), live.length ? "The newest 720: live from Kraken." : "Kraken's live feed isn't answering."].join("\n")

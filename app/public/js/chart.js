@@ -1720,7 +1720,7 @@ export class ChartPane {
     const label = !name || cs.titleMode === "symbol" ? t : cs.titleMode === "both" ? `${t} · ${name}` : name;
     let html = '<div class="row">';
     if (cs.logo) html += badge(sym);
-    // the title's tooltip says where a stored chart's bars came from (Settings, Market data)
+    // the title's tooltip says where a stored chart's bars came from (Settings, Crypto data)
     if (cs.title) html += `<span class="title" data-act="symbol"${this.source ? ` title="${esc(this.source)}"` : ""}>${esc(`${label} · ${this.cfg.tf} · ${this.provider || exchange(sym)}`)}</span>`;
     const mkt = cs.marketStatus && marketState(sym, tzOffset);
     if (mkt) html += `<span class="lg-dot ${mkt.cls}" title="${esc(mkt.tip)}"></span>`;

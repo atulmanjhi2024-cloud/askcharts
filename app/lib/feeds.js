@@ -66,7 +66,7 @@ const polygonCfg = () => {
 export const configured = () =>
   [alpacaCfg() && "alpaca", polygonCfg() && "polygon"].filter(Boolean);
 
-// ---------- Settings, Market data: your own keys, saved, checked and removed from the page ----------
+// ---------- Settings, Stock data: your own keys, saved, checked and removed from the page ----------
 // The page only ever learns whether a key is saved and its last 4 characters; a key goes from the page
 // to this file and to its own provider, never back.
 const KEY_RE = /^[A-Za-z0-9_\-+/=.]{8,200}$/;

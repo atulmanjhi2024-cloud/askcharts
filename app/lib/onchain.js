@@ -127,6 +127,9 @@ export function xrpl(q = {}) {
 
 // Settings, On chain data: whether the collector follows the ledger, from which server, whether it fills in from
 // the shared history (on unless turned off), and how it's doing.
+// A copy that reads another copy's store (my dev reads prod's) must not change its settings: the collector
+// that reads them is the other copy's. QT_ONCHAIN_SETTINGS=off makes On chain data read only.
+const settingsOff = () => process.env.QT_ONCHAIN_SETTINGS === "off";
 function saved() {
   try {
     return JSON.parse(fs.readFileSync(SETTINGS, "utf8"));
@@ -138,10 +141,11 @@ export function settings() {
   const s = saved();
   const d = store();
   const span = d ? d.prepare("SELECT MIN(t) AS first, MAX(t) AS last, COUNT(*) AS n FROM ledgers").get() : null;
-  return { enabled: s.enabled === true, server: serverOf(s), history: s.history !== false, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null };
+  return { enabled: s.enabled === true, server: serverOf(s), history: s.history !== false, collector: collector(), stored: span?.n ? { from: span.first, to: span.last, ledgers: span.n } : null, ...(settingsOff() ? { readOnly: true } : {}) };
 }
 
 export function saveSettings(body = {}) {
+  if (settingsOff()) throw Object.assign(new Error("This copy reads XRPL On chain read only. Its settings are changed on the copy that runs the collector."), { status: 403 });
   const enabled = body.enabled === true,
     now = saved();
   // left out (the on/off switch, the history switch): kept as it was. A server is written only when one is

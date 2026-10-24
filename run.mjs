@@ -10,7 +10,7 @@
 // Everything you make lives in ASKCHARTS_DATA (default: data/ beside this file), never beside the
 // code, so updating AskCharts never touches it:
 //   app/       charts, layouts, watchlists, alerts and settings     custom/    your own indicators
-//   history/   Kraken's bars (Settings, Market data)                 onchain/   the XRP Ledger store
+//   history/   Kraken's bars (Settings, Crypto data)                 onchain/   the XRP Ledger store
 //   gateway/   passkeys and sessions (a server only)                  updates/   what the Updates page shows
 //
 // Settings (environment):
@@ -200,7 +200,7 @@ if (GATEWAY) {
     );
 }
 
-// ---- Kraken's history: requests from Settings, Market data at once, the hourly update (which does
+// ---- Kraken's history: requests from Settings, Crypto data at once, the hourly update (which does
 // nothing while Automatic is off). One at a time: the importer waits for its own lock anyway.
 const histEnv = { ...base, HISTORY_DATA: dirs.history };
 const history = (cmd) => !kids.has("history") && run("history", [path.join("history", "kraken.mjs"), cmd], histEnv);

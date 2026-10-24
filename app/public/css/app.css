@@ -1704,7 +1704,7 @@ body.cur-eraser .pane .chart, body.cur-eraser .pane .chart * { cursor: url("data
 .am-menu .am-icon { width: 22px; }
 
 /* chart Settings dialog (after TradingView's): tabs on the left, two-column rows on the right */
-/* 760, a little wider than TradingView's 676, so Data keys fits on a laptop screen without scrolling */
+/* 760, a little wider than TradingView's 676, so Stock data fits on a laptop screen without scrolling */
 .modal-card.cs-card { width: min(760px, 96vw); max-height: min(86vh, 900px); }
 .cs-card .modal-head { padding: 18px 20px 14px; border-bottom: 0; font-size: 20px; font-weight: 600; }
 .cs-card .modal-head svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
@@ -2437,9 +2437,9 @@ select.cs-num.ai-in { padding-right: 8px; }
 .ab-h { font-weight: 600; color: var(--text); }
 .ab-small { font-size: 12px; }
 
-/* ---------- Settings, Market data ---------- */
+/* ---------- Settings, Crypto data ---------- */
 .md-wrap { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
-/* your own data keys, under Market data: laid out like it, but its own (marketdata.js looks for .md-wrap) */
+/* Stock data (your own keys): laid out like Crypto data, but its own (marketdata.js looks for .md-wrap) */
 .md-keys { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
 .md-link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .md-state { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; }

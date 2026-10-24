@@ -4,7 +4,7 @@ Kraken's free API gives a chart only its last 720 bars. This folder keeps a stor
 your computer, from each coin's first trade to now, so KRAKEN charts and the strategy report's backtests
 reach back years.
 
-Nothing downloads until you ask: Settings (the gear), Market data, Download Kraken history. The first
+Nothing downloads until you ask: Settings (the gear), Crypto data, Download Kraken history. The first
 download is Kraken's archive, about 10 GB in five parts, each checked against Kraken's own checksum. It
 needs about 34 GB free while it comes in and is checked, and 20 GB after. If it stops partway, it carries
 on from there next time. Then each coin catches up from the end of the archive at Kraken's pace: minutes for
@@ -24,13 +24,13 @@ AskCharts.
 
 ## Files
 
-- `kraken.mjs`: the importer. AskCharts' runner (`run.mjs`) starts it when Market data asks for something,
+- `kraken.mjs`: the importer. AskCharts' runner (`run.mjs`) starts it when Crypto data asks for something,
   and every hour for the update.
 - `db.mjs`: the store, one SQLite file. Its layout has a version and updates itself.
 - `config.json`: the coins a new store starts with (Kraken's names: XBT is BTC, XDG is DOGE).
 - `test/history.test.mjs`: offline tests. `node --test history/test/history.test.mjs`
 
-Everything it writes goes in your data folder, `history/`: the store, `status.json` (what Market data
+Everything it writes goes in your data folder, `history/`: the store, `status.json` (what Crypto data
 shows), `settings.json` (the coins, Automatic) and `jobs/` (requests from the page).
 
 ## Commands
