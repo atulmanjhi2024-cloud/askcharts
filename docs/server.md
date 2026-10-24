@@ -10,7 +10,10 @@ README.
 
 - A Linux server with Docker and Docker Compose, or without Docker (see [Without Docker](#without-docker)).
   1 GB of memory is enough; 2 GB if you turn on XRPL On chain. A few GB of disk, plus about 20 GB if you
-  download Kraken's history.
+  download Kraken's history (34 GB free while it comes in), about 400 MB a coin for Binance's and about 85 MB
+  a stock for stock history.
+- No server yet? [Free and low cost places to run it](#appendix-free-and-low-cost-places-to-run-it), at the
+  end of this guide, compares a few as of October 2026.
 - A domain you control (a subdomain like `charts.yourdomain.com` is fine). Passkeys and HTTPS need one.
 - About 15 minutes.
 
@@ -217,3 +220,34 @@ walk it through. Read what it runs before you let it: an AI with a shell can cha
 4. > In ~/askcharts, run `docker compose exec askcharts node gateway/link.mjs` and give me the link.
 
 5. > Show me how to back up the AskCharts data volume to a file, and how I'd restore it on a new server.
+
+## Appendix: free and low cost places to run it
+
+These were the options in October 2026. Free tiers and prices change often, so check each provider's own page
+before you sign up.
+
+AskCharts needs a machine that stays on, because alerts and the XRPL collector keep running when no browser is
+open. That rules out free hosts that put an app to sleep after a few minutes. The installer works on regular
+(x86) and Arm Linux, so either kind of server is fine.
+
+| Option | What you get | How it fits |
+|---|---|---|
+| [Oracle Cloud Always Free](https://docs.oracle.com/en-us/iaas/Content/FreeTier/resourceref.htm) | An Arm server with 2 CPUs and 12 GB of memory (4 and 24 until a 2026 cut), and block storage | Room for everything, Kraken's history included |
+| [Google Cloud free tier](https://cloud.google.com/free/docs/free-cloud-features) | One e2-micro (a shared CPU and 1 GB of memory), 30 GB of disk and 1 GB a month of outbound traffic in North America | A light setup: no Kraken history, and 1 GB of traffic goes quickly if you use it every day |
+| [AWS](https://aws.amazon.com/free/) | New accounts since July 2025 get $100 to $200 of credit instead of a free year | Free until the credit runs out |
+| A small paid VPS | A few dollars a month at many providers. Look for 2 GB of memory and 40 GB of disk | Everything, with no limits to watch |
+| A computer at home, like a Raspberry Pi 4 or 5 or an old laptop | Free, apart from the electricity | Everything, with as much disk as you add |
+
+A few things to know:
+
+- **Oracle** may take back a free server it sees as idle: CPU, network and memory all under 20% for a week. A
+  personal AskCharts that's quiet most of the day can look idle. The 2026 cut also disabled some servers until
+  their owners resized them.
+- **Google's** free tier doesn't include a public IP address. A Cloudflare tunnel doesn't need one, but its
+  traffic still counts toward the 1 GB.
+- **Any of them** can sit behind a free Cloudflare tunnel, as in step 3. That gives you HTTPS and an address
+  without opening any ports on the server.
+
+On a budget, I'd go with a computer at home behind a Cloudflare tunnel. It costs nothing to run, has no idle
+rules or traffic limits, and you decide how much disk it has. If it has to be in the cloud, Oracle's Always Free
+server is the only free one with room for everything. Just keep its idle rule in mind.
