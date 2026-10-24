@@ -49,6 +49,7 @@ key gives you live US stock prices (and CME futures, with Polygon): add it in Se
 - A recent Mac, Windows 10 or 11, or Linux (64 bit)
 - About 150 MB of disk, more if you download history
 - Chrome or Edge (Firefox and Safari should work, but I test on Chrome)
+- An internet connection, for live prices, Kraken's history, XRPL On chain and AskCharts AI
 - For AskCharts AI, an API key from Anthropic, OpenAI or xAI
 - Optional: a free Alpaca account, for live US stock prices
 
