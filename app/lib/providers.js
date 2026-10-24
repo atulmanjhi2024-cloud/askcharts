@@ -545,6 +545,9 @@ const KRAKEN_NATIVE = {
   "1D": 1440,
 };
 const krakenAsset = (a) => (a === "BTC" ? "XBT" : a);
+// Kraken's names for a coin typed into search (XBTUSD, XDG) as everyone else's (BTCUSD, DOGE), so its own
+// pair is found too, and the chart's name lookup for KRAKEN:XBTUSD finds "BTC / USD"
+export const commonCoin = (q) => q.replace(/^XBT/, "BTC").replace(/^XDG/, "DOGE");
 
 // Product lists for search. An exchange that doesn't answer just drops out of the results.
 const coinbaseProducts = () =>
@@ -1417,8 +1420,9 @@ export async function search(q) {
         exchange: "FX",
       });
   const bin = await binanceSymbolMap();
+  const coin = commonCoin(query);
   const cryptoHits = [...bin.entries()]
-    .filter(([t, s]) => t.startsWith(query) || s.base === query)
+    .filter(([t, s]) => t.startsWith(coin) || s.base === coin)
     .sort(
       (a, b) =>
         (a[1].quote === "USDT" ? -1 : 0) - (b[1].quote === "USDT" ? -1 : 0) ||

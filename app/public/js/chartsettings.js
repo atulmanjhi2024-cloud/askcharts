@@ -1,9 +1,10 @@
 // The chart Settings dialog (the gear at the top right), after TradingView's: Symbol, Status line,
-// Scales and lines, Canvas, Trading, Alerts and Events, plus AskCharts AI and Market data (the history store). Changes show on the charts as they're made;
+// Scales and lines, Canvas, Trading, Alerts and Events, plus AskCharts AI, Market data (the history store) and On chain data (XRPL On chain). Changes show on the charts as they're made;
 // Cancel, Esc or the close button put everything back, Ok keeps them.
 import { esc, exchange, ticker } from "./api.js";
 import { aiSettings } from "./copilot.js";
 import { marketData } from "./marketdata.js";
+import { onchainData } from "./onchaindata.js";
 import { dataKeys } from "./datakeys.js";
 import { updatesPage } from "./updates.js";
 import { PALETTE, rgbOf, hexOf, cssOf, lineIcon, STYLES } from "./drawtoolbar.js";
@@ -305,6 +306,7 @@ const TAB_ICONS = {
   about: svg('<circle cx="14" cy="14" r="9.5"/><path d="M14 12.5v7M14 8.6v.4"/>'),
   market: svg('<ellipse cx="14" cy="7.5" rx="8" ry="3"/><path d="M6 7.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13M6 14c0 1.66 3.58 3 8 3s8-1.34 8-3"/>'),
   keys: svg('<circle cx="10" cy="18" r="5"/><path d="M13.5 14.5L23 5M18.5 9.5l3 3M16 12l2.5 2.5"/>'),
+  onchain: svg('<rect x="4.5" y="4.5" width="9" height="9" rx="2"/><rect x="14.5" y="14.5" width="9" height="9" rx="2"/><path d="M13.5 9h5v5.5M9 13.5v5h5.5"/>'),
   updates: svg('<path d="M14 4.5v13M8.5 12.5l5.5 5.5 5.5-5.5M5.5 22.5h17"/>'),
 };
 const TABS = [
@@ -317,6 +319,7 @@ const TABS = [
   ["events", "Events"],
   ["ai", "AskCharts AI"],
   ["market", "Market data"],
+  ["onchain", "On chain data"],
   ["keys", "Data keys"],
   ["updates", "Updates"],
   ["about", "About"],
@@ -354,6 +357,12 @@ export function openChartSettings(app, chartTypes, start) {
   md.load().then(() => {
     if (tab === "market" && page.isConnected) redraw();
   });
+  // XRPL On chain: its settings and what the collector reports, read every few seconds while its tab is open
+  const oc = onchainData();
+  let ocStale = false;
+  oc.load().then(() => {
+    if (tab === "onchain" && page.isConnected) redraw();
+  });
   // your own data keys, on their own tab
   const dk = dataKeys();
   dk.load().then(() => {
@@ -371,6 +380,16 @@ export function openChartSettings(app, chartTypes, start) {
     // a change that arrives while a coin is being typed waits until the typing stops
     if (mdStale && tab === "market" && page.isConnected && !md.typing(page)) {
       mdStale = false;
+      redraw();
+    }
+  }, 4000);
+  const ocPoll = setInterval(async () => {
+    if (!page.isConnected) return clearInterval(ocPoll);
+    if (tab !== "onchain" || document.hidden) return;
+    if (await oc.load()) ocStale = true;
+    // a change that arrives while a server is being typed waits until it's saved or put back
+    if (ocStale && tab === "onchain" && page.isConnected && !oc.typing(page)) {
+      ocStale = false;
       redraw();
     }
   }, 4000);
@@ -568,6 +587,9 @@ export function openChartSettings(app, chartTypes, start) {
     market() {
       return `${md.html()}<div class="cs-sec">LIVE US STOCK PRICES</div><div class="md-keys"><p class="ai-lead">With your own Alpaca or Polygon key: <button class="md-link" data-cs-goto="keys">Data keys</button>.</p></div>`;
     },
+    onchain() {
+      return oc.html();
+    },
     keys() {
       return dk.html();
     },
@@ -616,6 +638,7 @@ export function openChartSettings(app, chartTypes, start) {
     page.scrollTop = top;
     if (t === "ai") ai.bind(page, redraw);
     if (t === "market") md.bind(page, redraw);
+    if (t === "onchain") oc.bind(page, redraw);
     if (t === "keys") dk.bind(page, redraw);
     if (t === "updates") up.bind(page, redraw);
     for (const b of page.querySelectorAll("[data-cs-goto]")) b.onclick = () => show(b.dataset.csGoto);

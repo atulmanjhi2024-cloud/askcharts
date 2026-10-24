@@ -59,12 +59,10 @@ before each change" in Settings, AskCharts AI.
 
 ## More data
 
-Settings, Market data:
-
-- **Kraken history:** years of Kraken's own bars for KRAKEN charts and longer backtests. The first
-  download is about 10 GB.
-- **XRPL On chain:** the XRP Ledger's activity for the indicators under Indicators, On chain. Following
-  the ledger through a public server is about 15 GB of downloads a day.
+- **Kraken history** (Settings, Market data): years of Kraken's own bars for KRAKEN charts and longer
+  backtests. The first download is about 10 GB.
+- **XRPL On chain** (Settings, On chain data): the XRP Ledger's activity for the indicators under
+  Indicators, On chain. Following the ledger through a public server is about 15 GB of downloads a day.
 
 Both start off, and nothing big downloads until you turn it on.
 

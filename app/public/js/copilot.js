@@ -5,6 +5,7 @@
 import { api, esc, ticker } from "./api.js";
 import { BY_ID } from "../lib/indicators.js";
 import { PRODUCTS } from "./products.js";
+import { sameIndicator } from "../lib/agent-tools.js";
 // agent.js (the AI's tools) loads on the first question: it imports the chart, which only runs in a
 // browser, and the server's guide imports this file through Settings.
 const loadAgent = () => import("./agent.js");
@@ -155,7 +156,7 @@ export class Copilot {
       bar = bars.at(-1),
       prev = bars.at(-2);
     const indicators = (p.cfg.indicators || [])
-      .map((ind) => {
+      .map((ind, k, all) => {
         const def = BY_ID[ind.id];
         if (!def) return null;
         const res = p.indResults?.[ind.uid] || {},
@@ -168,7 +169,8 @@ export class Copilot {
               break;
             }
         }
-        return { name: `${shortName(def)} ${p.indicatorParamsLabel?.(ind) || ""}`.trim(), values, ...(ind.hidden ? { hidden: true } : {}), ...(res.error ? { error: String(res.error).slice(0, 120) } : {}) };
+        const twin = all.slice(0, k).some((x) => sameIndicator(def, x, ind));
+        return { name: `${shortName(def)} ${p.indicatorParamsLabel?.(ind) || ""}`.trim(), values, ...(ind.hidden ? { hidden: true } : {}), ...(twin ? { duplicate: true } : {}), ...(res.error ? { error: String(res.error).slice(0, 120) } : {}) };
       })
       .filter(Boolean);
     const r = p.chart.timeScale().getVisibleLogicalRange();
@@ -295,7 +297,7 @@ export class Copilot {
     const typing = m.pending ? '<div class="cp-typing"><i></i><i></i><i></i></div>' : "";
     const all = !m.pending && undoable > 1 ? `<button class="cp-undo cp-undo-all" data-undo="${i}:0">Undo all</button>` : "";
     const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-    const used = m.usage && !m.pending ? `<div class="cp-meta cp-used">${k(m.usage.input + m.usage.cached + m.usage.output)} tokens${m.usage.cached ? ` (${k(m.usage.cached)} from cache)` : ""}</div>` : "";
+    const used = m.usage && !m.pending && m.usage.input + m.usage.cached + m.usage.output > 0 ? `<div class="cp-meta cp-used">${k(m.usage.input + m.usage.cached + m.usage.output)} tokens${m.usage.cached ? ` (${k(m.usage.cached)} from cache)` : ""}</div>` : "";
     return `<div class="cp-msg cp-ai" data-i="${i}">${html}${typing}${all}${tail}${used}</div>`;
   }
   paintLast() {
@@ -445,20 +447,26 @@ export class Copilot {
 }
 
 // ---------- Settings, AskCharts AI: provider, key, Test, model ----------
-// The typed key lives only in this dialog and in the requests that test and save it.
+// The typed key lives only in this dialog and in the requests that test and save it. Each provider keeps
+// its own saved key and model; the one picked here is the one AskCharts AI uses after Ok.
+// A first pick for each provider's list: a mid-size Claude, the newest full GPT, the newest full Grok.
+const PREFER = { anthropic: /sonnet/i, openai: /^gpt-\d+(\.\d+)?$/i, xai: /^grok-\d+(\.\d+)?(-\d{4})?$/i };
 export function aiSettings(app) {
-  const st = { cfg: null, key: "", reveal: false, models: null, model: "", context: true, askFirst: false, status: "", tone: "", remove: false };
+  const st = { cfg: null, provider: "anthropic", key: "", reveal: false, models: null, model: "", context: true, askFirst: false, status: "", tone: "", remove: false };
+  const prov = (id = st.provider) => (st.cfg?.providers || []).find((p) => p.id === id) || { id, name: id, label: id, hasKey: false, keyHint: "", model: "", modelName: "" };
   const pick = (models) => {
-    const keep = models.find((m) => m.id === (st.model || st.cfg?.model));
-    return (keep || models.find((m) => /sonnet/i.test(m.id) && !m.deprecated) || models.find((m) => !m.deprecated) || models[0])?.id || "";
+    const keep = models.find((m) => m.id === (st.model || prov().model));
+    const like = PREFER[st.provider];
+    return (keep || (like && models.find((m) => like.test(m.id) && !m.deprecated)) || models.find((m) => !m.deprecated && !/mini|nano/i.test(m.id)) || models[0])?.id || "";
   };
   return {
     async load() {
       try {
         st.cfg = await api.get("/api/copilot/config");
       } catch {
-        st.cfg = { providers: [{ id: "anthropic", name: "Anthropic (Claude, hosted)" }], provider: "anthropic", hasKey: false, context: true };
+        st.cfg = { providers: [{ id: "anthropic", name: "Anthropic (Claude, hosted)", label: "Anthropic" }], provider: "anthropic", hasKey: false, context: true };
       }
+      st.provider = st.cfg.provider || "anthropic";
       st.model = st.cfg.model || "";
       st.context = st.cfg.context !== false;
       st.askFirst = st.cfg.askFirst === true;
@@ -466,21 +474,26 @@ export function aiSettings(app) {
     html() {
       const c = st.cfg;
       if (!c) return '<div class="cs-sec">ASKCHARTS AI</div><div class="cs-l span">Loading…</div>';
-      const hasKey = c.hasKey && !st.remove;
+      const pv = prov();
+      const hasKey = pv.hasKey && !st.remove;
       const models = st.models
         ? st.models.map((m) => `<option value="${esc(m.id)}" ${m.id === st.model ? "selected" : ""}>${esc(m.name)}${m.deprecated ? " (deprecated)" : ""}</option>`).join("")
-        : `<option>${esc(hasKey && c.modelName ? c.modelName : "Test the key first")}</option>`;
+        : `<option>${esc(hasKey && pv.modelName ? pv.modelName : "Test the key first")}</option>`;
+      // picking another provider: Ok moves AskCharts AI over to it, once it has a key
+      const other = st.provider !== c.provider ? `AskCharts AI uses ${prov(c.provider).label} now. ${hasKey || st.key.trim() ? "" : `Paste your ${pv.label} key and Test it, then `}Ok switches it to ${pv.label}.` : "";
       return `<div class="cs-sec">ASKCHARTS AI</div><div class="ai-wrap">
         <p class="ai-lead">AskCharts AI answers questions about the app and the chart on screen, and does things on the chart when you ask, in the panel on the right toolbar. It runs on your own API key.</p>
-        <label class="ai-f"><span>Provider</span><select class="cs-num ai-in" data-ai="provider">${(c.providers || []).map((p) => `<option value="${esc(p.id)}" ${p.id === c.provider ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
-        <div class="ai-f"><span>API key</span><div class="ai-row"><div class="ai-key"><input class="cs-num ai-in" data-ai="key" type="${st.reveal ? "text" : "password"}" autocomplete="off" spellcheck="false" placeholder="${hasKey ? `Saved key ending in ${esc(c.keyHint)}. Paste a new one to replace it` : "Paste the key"}" value="${esc(st.key)}"><button class="ai-eye" data-ai="eye" title="${st.reveal ? "Hide" : "Show"} what you typed">${I.eye}</button></div><button class="btn ai-test" data-ai="test">Test</button></div></div>
+        <label class="ai-f"><span>Provider</span><select class="cs-num ai-in" data-ai="provider">${(c.providers || []).map((p) => `<option value="${esc(p.id)}" ${p.id === st.provider ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+        ${other ? `<div class="ai-sub">${esc(other)}</div>` : ""}
+        <div class="ai-f"><span>API key</span><div class="ai-row"><div class="ai-key"><input class="cs-num ai-in" data-ai="key" type="${st.reveal ? "text" : "password"}" autocomplete="off" spellcheck="false" placeholder="${hasKey ? `Saved key ending in ${esc(pv.keyHint)}. Paste a new one to replace it` : `Paste your ${esc(pv.label)} API key`}" value="${esc(st.key)}"><button class="ai-eye" data-ai="eye" title="${st.reveal ? "Hide" : "Show"} what you typed">${I.eye}</button></div><button class="btn ai-test" data-ai="test">Test</button></div></div>
+        ${hasKey ? "" : `<div class="ai-sub">Make one in your ${esc(pv.label)} account, under API keys.</div>`}
         <label class="ai-f"><span>Model</span><select class="cs-num ai-in" data-ai="model" ${st.models ? "" : "disabled"}>${models}</select></label>
         <div class="ai-status ${st.tone}">${esc(st.status)}</div>
         <label class="cs-chk"><input type="checkbox" data-ai="context" ${st.context ? "checked" : ""}><span class="cs-box"></span><span>Share the chart with AskCharts AI</span></label>
         <div class="ai-sub">Sends the symbol, interval, last bar, indicator values and what's in view with each question.</div>
         <label class="cs-chk"><input type="checkbox" data-ai="askFirst" ${st.askFirst ? "checked" : ""}><span class="cs-box"></span><span>Ask before each change</span></label>
         <div class="ai-sub">Off: it makes the changes you ask for and lists each one with Undo. It always asks before removing several things.</div>
-        ${hasKey ? '<button class="ai-remove" data-ai="remove">Remove the saved key</button>' : st.remove ? '<div class="ai-sub">The saved key will be removed when you press Ok.</div>' : ""}
+        ${hasKey ? `<button class="ai-remove" data-ai="remove">Remove the saved ${esc(pv.label)} key</button>` : st.remove ? `<div class="ai-sub">The saved ${esc(pv.label)} key will be removed when you press Ok.</div>` : ""}
         <p class="ai-note">The key stays on this computer, in a file only this account can read. It's sent only to the provider, never back to the browser. Questions are billed to your provider account.</p>
       </div>`;
     },
@@ -501,6 +514,11 @@ export function aiSettings(app) {
         e.stopPropagation();
         if (e.key === "Enter") page.querySelector('[data-ai="test"]')?.click();
       };
+      page.querySelector('[data-ai="provider"]').onchange = (e) => {
+        Object.assign(st, { provider: e.target.value, key: "", models: null, status: "", tone: "", remove: false });
+        st.model = prov().model;
+        redraw();
+      };
       page.querySelector('[data-ai="model"]').onchange = (e) => (st.model = e.target.value);
       page.querySelector('[data-ai="context"]').onchange = (e) => (st.context = e.target.checked);
       page.querySelector('[data-ai="askFirst"]').onchange = (e) => (st.askFirst = e.target.checked);
@@ -518,7 +536,7 @@ export function aiSettings(app) {
         };
       page.querySelector('[data-ai="test"]').onclick = async (e) => {
         const btn = e.currentTarget;
-        if (!st.key.trim() && !(st.cfg.hasKey && !st.remove)) {
+        if (!st.key.trim() && !(prov().hasKey && !st.remove)) {
           st.status = "Paste a key first.";
           st.tone = "err";
           return redraw();
@@ -526,7 +544,7 @@ export function aiSettings(app) {
         btn.disabled = true;
         btn.textContent = "Testing…";
         try {
-          const models = await api.post("/api/copilot/models", { provider: page.querySelector('[data-ai="provider"]').value, key: st.key.trim() });
+          const models = await api.post("/api/copilot/models", { provider: st.provider, key: st.key.trim() });
           if (!models.length) throw new Error("The key works, but no models came back.");
           st.models = models;
           st.model = pick(models);
@@ -541,26 +559,28 @@ export function aiSettings(app) {
       };
     },
     pending: () => (st.key.trim() && !st.models ? "Test the new AI key first (or clear it) before pressing Ok." : ""),
-    // On Ok. A new key is checked again by the server before it's saved.
+    // On Ok. A new key is checked again by the server before it's saved. A provider without a key stays
+    // unpicked: AskCharts AI keeps the one it has.
     async commit() {
       const c = st.cfg;
       if (!c) return "";
-      const provider = c.provider || "anthropic";
+      const provider = st.provider,
+        pv = prov();
       const typed = st.key.trim();
       let msg = "";
       if (st.remove && !typed) {
-        await api.del("/api/copilot/key");
-        msg = "Removed the AskCharts AI key.";
+        await api.del(`/api/copilot/key?provider=${encodeURIComponent(provider)}`);
+        msg = `Removed the ${pv.label} key.`;
       }
       if (typed) {
         if (!st.models) throw new Error("Test the new key before saving it.");
         const r = await api.put("/api/copilot/config", { provider, key: typed, model: st.model, context: st.context, askFirst: st.askFirst });
         msg = `AskCharts AI connected (${r.modelName || r.model}).`;
-      } else if (!st.remove && c.hasKey && (st.model && st.model !== c.model)) {
-        const r = await api.put("/api/copilot/config", { provider, model: st.model, context: st.context, askFirst: st.askFirst });
+      } else if (!st.remove && pv.hasKey && ((st.model && st.model !== pv.model) || provider !== c.provider)) {
+        const r = await api.put("/api/copilot/config", { provider, model: st.model || pv.model, context: st.context, askFirst: st.askFirst });
         msg = `AskCharts AI now uses ${r.modelName || r.model}.`;
       } else if (!st.remove && (st.context !== (c.context !== false) || st.askFirst !== (c.askFirst === true))) {
-        await api.put("/api/copilot/config", { provider, context: st.context, askFirst: st.askFirst });
+        await api.put("/api/copilot/config", { provider: c.provider, context: st.context, askFirst: st.askFirst });
       }
       await app.copilot?.refreshConfig();
       return msg;

@@ -2,10 +2,12 @@
 // form ({role: user | assistant (text and the tools it called) | tool (their results)}); this adds the
 // guide and the chart (cached by the provider), the tool list, and relays the model's answer as it's
 // written: text, then the tools it wants run. The page runs them and comes back for the next round.
-// The key stays here (lib/copilot.js); it is only ever sent to the provider.
+// The key stays here (lib/copilot.js); it is only ever sent to the provider. OpenAI and xAI get the
+// same conversation, turned into their own form by lib/ai-openai.js.
 import { agentConfig, apiError, readEvents } from "./copilot.js";
 import { systemBlocks } from "./copilot-guide.js";
 import { toolSpecs, AGENT_TOOL_BY_NAME } from "../public/lib/agent-tools.js";
+import * as oai from "./ai-openai.js";
 
 const API_VERSION = "2023-06-01";
 const MAX_TOKENS = 4096;
@@ -24,6 +26,8 @@ const tools = () => {
   }
   return specs;
 };
+// models that turned down a chart picture (provider:model), sent text only from then on
+const noImages = new Set();
 
 // The shared form into Anthropic's: tool calls are tool_use blocks, their results tool_result blocks in
 // a user turn (first in it), turns of the same role merge, and the conversation starts with a user.
@@ -92,6 +96,19 @@ export async function step(input, res, fetchImpl = fetch) {
   if (!c.key) throw bad("Add an API key in Settings, AskCharts AI first.");
   if (!c.model) throw bad("Pick a model in Settings, AskCharts AI first.");
   const messages = toAnthropic(input?.messages);
+  const p = c.provider,
+    openai = p.kind === "openai";
+  const system = systemBlocks(c.context ? input?.context : null);
+  // OpenAI's form; pictures only to a model that takes them
+  const seen = `${p.id}:${c.model}`;
+  const ask = (images) =>
+    openai
+      ? oai.request(c, { system, messages, tools: toolSpecs(), images })
+      : {
+          url: `${c.base}/v1/messages`,
+          headers: { "x-api-key": c.key, "anthropic-version": API_VERSION, "content-type": "application/json" },
+          body: { model: c.model, max_tokens: MAX_TOKENS, tools: tools(), system, messages, stream: true },
+        };
   if (busy) throw bad("AskCharts AI is still working. Wait for it, or press Stop.", 429);
   busy = true;
   const ac = new AbortController();
@@ -100,24 +117,47 @@ export async function step(input, res, fetchImpl = fetch) {
   });
   try {
     let r;
+    const post = (q) => fetchImpl(q.url, { method: "POST", headers: q.headers, body: JSON.stringify(q.body), signal: ac.signal });
     try {
-      r = await fetchImpl(`${c.base}/v1/messages`, {
-        method: "POST",
-        headers: { "x-api-key": c.key, "anthropic-version": API_VERSION, "content-type": "application/json" },
-        body: JSON.stringify({ model: c.model, max_tokens: MAX_TOKENS, tools: tools(), system: systemBlocks(c.context ? input?.context : null), messages, stream: true }),
-        signal: ac.signal,
-      });
+      const first = ask(c.images && !noImages.has(seen));
+      r = await post(first);
+      // a model that won't take a chart picture: once more without it, and text only from then on
+      if (openai && r.status === 400 && /"(image_url|input_image)"/.test(JSON.stringify(first.body))) {
+        const body = await r.clone().json().catch(() => ({}));
+        if (/image/i.test(JSON.stringify(body))) {
+          noImages.add(seen);
+          r = await post(ask(false));
+        }
+      }
     } catch (e) {
       if (ac.signal.aborted) return;
-      throw bad(`Couldn't reach Anthropic: ${e.message}`, 502);
+      throw bad(`Couldn't reach ${p.label}: ${e.message}`, 502);
     }
     if (!r.ok) {
       const body = await r.json().catch(() => ({}));
-      throw bad(apiError(r.status, body, c.key), r.status === 429 ? 429 : 502);
+      throw bad(apiError(r.status, body, c.key, p), r.status === 429 ? 429 : 502);
     }
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     send({ t: "start", model: c.modelName || c.model });
+    if (openai) {
+      let done = null;
+      try {
+        done = await oai.read(c, r.body, readEvents, {
+          text: (v) => send({ t: "text", v }),
+          call: (x) => send({ t: "call", ...x }),
+          error: (d) => send({ t: "error", message: apiError(0, d, c.key, p) }),
+        });
+      } catch (e) {
+        if (!ac.signal.aborted) send({ t: "error", message: `The answer broke off: ${e.message}` });
+      }
+      if (!res.writableEnded) {
+        if (done?.empty && done.stop === "max_tokens") send({ t: "error", message: oai.THOUGHT_OUT });
+        send({ t: "done", stop: done?.stop || null, usage: done?.usage || { input: 0, output: 0, cached: 0 } });
+        res.end();
+      }
+      return;
+    }
     const blocks = {};
     let stop = null,
       usage = {};
@@ -141,7 +181,7 @@ export async function step(input, res, fetchImpl = fetch) {
         else if (type === "message_delta") {
           stop = data.delta?.stop_reason || stop;
           usage = { ...usage, ...(data.usage || {}) };
-        } else if (type === "error") send({ t: "error", message: apiError(0, data, c.key) });
+        } else if (type === "error") send({ t: "error", message: apiError(0, data, c.key, p) });
       });
     } catch (e) {
       if (!ac.signal.aborted) send({ t: "error", message: `The answer broke off: ${e.message}` });

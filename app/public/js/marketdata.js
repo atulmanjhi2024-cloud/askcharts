@@ -7,7 +7,7 @@ import { api, esc } from "./api.js";
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const pad = (n) => String(n).padStart(2, "0");
 // "20:05" today, "15 Oct 20:05" this year, "6 Oct 2013" before (local time)
-function when(iso, { time = true } = {}) {
+export function when(iso, { time = true } = {}) {
   const t = typeof iso === "number" ? iso * 1000 : Date.parse(iso || "");
   if (!Number.isFinite(t)) return "";
   const d = new Date(t),
@@ -32,7 +32,7 @@ const common = (pair) => {
 };
 
 export function marketData() {
-  const st = { s: null, err: "", json: "", pairs: null, flash: "", flashAt: 0, tone: "", add: "", oc: null, ocServer: null };
+  const st = { s: null, err: "", json: "", pairs: null, flash: "", flashAt: 0, tone: "", add: "" };
   const ask = async (job, done) => {
     try {
       const r = await api.post("/api/history/jobs", job);
@@ -50,14 +50,12 @@ export function marketData() {
     // true when something on the page changed
     async load() {
       try {
-        // the history store, and XRPL On chain's settings and collector
-        const [s, oc] = await Promise.all([api.get("/api/history/status"), api.get("/api/onchain/settings").catch(() => null)]);
-        const json = JSON.stringify([s, oc]);
+        const s = await api.get("/api/history/status");
+        const json = JSON.stringify(s);
         st.err = "";
         if (json === st.json) return false;
         st.json = json;
         st.s = s;
-        st.oc = oc;
       } catch (e) {
         st.err = e.message;
       }
@@ -84,7 +82,7 @@ export function marketData() {
         h += `<p class="ai-note">The first download is Kraken's archive, about 10 GB. It needs about 34 GB free while it comes in and is checked, and 20 GB after. Then each coin catches up from the archive's end (the last quarter's) at Kraken's pace: minutes for a quiet coin, an hour or more for a busy one.</p>`;
         h += asked ? '<div class="md-state busy"><i></i><span>Starting the download…</span></div>' : '<div class="md-acts"><button class="btn primary" data-md="start">Download Kraken history</button></div>';
         if (st.flash && Date.now() - st.flashAt < 30000) h += `<div class="ai-status ${st.tone}">${esc(st.flash)}</div>`;
-        return `${h}</div>${this.xrpl()}`;
+        return `${h}</div>`;
       }
       const k = s.kraken,
         coins = k.coins || [],
@@ -145,56 +143,10 @@ export function marketData() {
         h += `<div class="ai-sub md-tight">Kraken's archive has every coin from its first trade. Adding one takes about a minute, then its trades since the archive, at Kraken's pace (an hour or more for a busy coin).</div>`;
       }
       h += "</div>";
-      h += this.xrpl();
       h += '<div class="cs-sec">OTHER MARKETS</div>';
       h += `<div class="md-wrap"><p class="ai-lead">Binance, Coinbase, stocks and ETFs aren't stored yet: their charts use each source's own feed (Binance and Coinbase give up to 20,000 bars).</p>`;
       h += `<p class="ai-note">Actions here start right away; Cancel doesn't undo them. Removing a coin deletes its bars and shrinks the store file, which needs about twice the store's size free for a moment.</p></div>`;
       return h;
-    },
-    // XRPL On chain: on or off, the server, and what the collector has
-    xrpl() {
-      const o = st.oc;
-      let h = '<div class="cs-sec">XRP LEDGER (XRPL ON CHAIN)</div><div class="md-wrap md-xrpl">';
-      if (!o) return `${h}<p class="ai-lead">XRPL On chain isn't available here.</p></div>`;
-      const c = o.collector;
-      // the server's host (the collector reports only that), and the collector's own last failure in plain words
-      const hostOf = (u) => {
-        try {
-          return new URL(u).host;
-        } catch {
-          return u;
-        }
-      };
-      const why = (m) => (!m ? "" : /rate.?limit|slow.?down|too.?busy/i.test(m) ? "it's rate limiting this network" : /closed the connection/i.test(m) ? "it closed the connection" : m.replace(/\.$/, ""));
-      const waitS = c?.limited && Math.max(1, Math.round((Date.parse(c.limited.until) - Date.now()) / 1000));
-      const failed = c?.lastError && (!c.connected || !c.connectedAt || Date.parse(c.lastErrorAt) >= Date.parse(c.connectedAt));
-      const state = !o.enabled
-        ? ["warn", "Off. The XRPL indicators under Indicators, On chain show nothing new."]
-        : !c || !c.updated || Date.now() - Date.parse(c.updated) > 120e3
-          ? ["busy", "Starting…"]
-          : c.server && c.server !== hostOf(o.server)
-            ? ["busy", `Switching to ${o.server}…`]
-            : !c.connected
-              ? ["err", `Can't reach ${o.server}${failed ? `: ${why(c.lastError)}` : ""}. Trying again.`]
-              : c.limited && Date.parse(c.limited.until) > Date.now()
-                ? ["warn", `Following the ledger. ${hostOf(o.server)} asked to slow down, so it's filling in more slowly (next in ${waitS} s).${(c.behind ?? 0) > 10 ? ` It's falling behind the ledger: this server can't keep up with every ledger. Try ${hostOf(o.server) === "s1.ripple.com" ? "your own node" : "wss://s1.ripple.com or your own node"}.` : ""}`]
-                : ["ok", `Following the ledger${c.toFill ? `, ${c.toFill.toLocaleString("en-US")} older ledger${c.toFill === 1 ? "" : "s"} still to fill in` : ""}.`];
-      h += `<p class="ai-lead">The XRP Ledger's activity and payments, ledger by ledger, for the XRPL indicators under Indicators, On chain. Kept for 90 days on this computer.</p>`;
-      h += `<div class="md-state ${state[0]}"><i></i><span>${esc(state[1])}</span></div>`;
-      h += `<label class="cs-chk"><input type="checkbox" data-md="xrpl" ${o.enabled ? "checked" : ""}><span class="cs-box"></span><span>Follow the XRP Ledger</span></label>`;
-      h += `<div class="md-add"><input class="cs-num ai-in" data-md="xrplserver" placeholder="wss://s1.ripple.com" autocomplete="off" spellcheck="false" value="${esc(st.ocServer ?? o.server)}"><button class="btn" data-md="xrplsave">Save server</button></div>`;
-      h += `<div class="ai-sub md-tight">A public server sends about 15 GB a day to follow every ledger. If you run your own XRP Ledger node, put its WebSocket address here instead.</div>`;
-      h += `<label class="cs-chk"><input type="checkbox" data-md="xrplhist" ${o.history ? "checked" : ""}><span class="cs-box"></span><span>Fill in history from askcharts.pro</span></label>`;
-      h += `<div class="ai-sub md-tight">Up to 90 days of ledgers from data.askcharts.pro when the collector starts, about 0.5 MB a day, every file signed and checked. Without it, the collector fills in one day back, ledger by ledger, from the server above. It only downloads; nothing is sent.</div>`;
-      const sh = c?.history;
-      const shared = !o.history ? "" : sh?.error ? `Couldn't read it last time (${sh.error})` : sh?.newest ? `Filled in up to ${when(new Date(sh.newest * 1000).toISOString())}` : "";
-      if (o.stored || shared) {
-        h += '<div class="md-facts">';
-        if (o.stored) h += `<div class="md-k">Stored</div><div class="md-v">${o.stored.ledgers.toLocaleString("en-US")} ledgers, ${esc(when(new Date(o.stored.from * 1000).toISOString()))} to ${esc(when(new Date(o.stored.to * 1000).toISOString()))}</div>`;
-        if (shared) h += `<div class="md-k">Shared history</div><div class="md-v">${esc(shared)}</div>`;
-        h += "</div>";
-      }
-      return `${h}</div>`;
     },
     tone(s) {
       const k = s.kraken;
@@ -217,43 +169,10 @@ export function marketData() {
       return k.lastOk ? `Up to date. Last update ${when(k.lastOk)}.` : "Waiting for the first update.";
     },
     // keep the page still while a coin is being typed
-    // keep the page still while a coin or a server is being typed, and while a typed server isn't saved yet
-    // (a redraw between pressing Save and letting go would lose the click)
-    typing: (page) =>
-      (page.contains(document.activeElement) && document.activeElement.matches("input[type=text], input:not([type])")) ||
-      (st.ocServer != null && st.ocServer !== st.oc?.server),
+    typing: (page) => page.contains(document.activeElement) && document.activeElement.matches("input[type=text], input:not([type])"),
     bind(page, redraw) {
       const wrap = page.querySelector(".md-wrap");
       if (!wrap) return;
-      // XRPL On chain: the switch and the server
-      const saveXrpl = async (body, words) => {
-        try {
-          st.oc = await api.post("/api/onchain/settings", body);
-          st.ocServer = null;
-          st.flash = words;
-          st.tone = "ok";
-        } catch (e) {
-          st.flash = e.message;
-          st.tone = "err";
-        }
-        st.flashAt = Date.now();
-        st.json = "";
-        redraw();
-      };
-      const xs = page.querySelector('[data-md="xrplserver"]');
-      if (xs) {
-        xs.oninput = () => (st.ocServer = xs.value);
-        xs.onkeydown = (e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") page.querySelector('[data-md="xrplsave"]')?.click();
-        };
-      }
-      const xon = page.querySelector('[data-md="xrpl"]');
-      if (xon) xon.onchange = (e) => saveXrpl({ enabled: e.target.checked }, e.target.checked ? "Following the XRP Ledger. The collector starts within a few seconds." : "Stopped following the XRP Ledger. What's stored stays.");
-      const xhist = page.querySelector('[data-md="xrplhist"]');
-      if (xhist) xhist.onchange = (e) => saveXrpl({ enabled: !!st.oc?.enabled, history: e.target.checked }, e.target.checked ? "The collector fills in from askcharts.pro each time it starts." : "Shared history off. The collector fills in one day back, ledger by ledger.");
-      const xsave = page.querySelector('[data-md="xrplsave"]');
-      if (xsave) xsave.onclick = () => saveXrpl({ enabled: !!st.oc?.enabled, server: st.ocServer ?? st.oc?.server }, "Server saved.");
       const start = page.querySelector('[data-md="start"]');
       if (start)
         start.onclick = async () => {

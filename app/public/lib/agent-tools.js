@@ -182,7 +182,7 @@ export const AGENT_TOOLS = [
   {
     name: "indicator_add",
     runs: "page",
-    description: "Add an indicator or strategy to a chart, by id from indicator_catalog, with input values and colors. Returns its uid.",
+    description: "Add an indicator or strategy to a chart, by id from indicator_catalog, with input values and colors. Returns its uid. One with the same id and inputs already on the chart isn't added twice: its uid comes back with already: true.",
     input_schema: {
       type: "object",
       properties: {
@@ -284,4 +284,7 @@ export const AGENT_TOOLS = [
 export const AGENT_TOOL_BY_NAME = Object.fromEntries(AGENT_TOOLS.map((t) => [t.name, t]));
 
 // The provider's view of a tool: name, description and inputs only.
+// Two indicators the same: one id, every input equal (an input left out reads as its default)
+export const sameIndicator = (def, a, b) => a.id === b.id && (def?.inputs || []).every((i) => String(a.params?.[i.key] ?? i.default) === String(b.params?.[i.key] ?? i.default));
+
 export const toolSpecs = () => AGENT_TOOLS.map(({ name, description, input_schema }) => ({ name, description, input_schema }));

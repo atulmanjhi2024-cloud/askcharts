@@ -6,8 +6,8 @@ AskCharts is a charting platform that runs on your own computer or your own serv
 a trading platform: charts, indicators, drawing tools, alerts, a screener, a strategy tester and bar replay. What
 sets it apart is **AskCharts AI**. You tell it what you want in plain English, and it does it on the chart.
 
-You bring your own AI model and your own key. Today that's **Claude**, from Anthropic. OpenAI and Google Gemini are
-next.
+You bring your own AI model and your own key: **Claude** from Anthropic, **GPT** from OpenAI or **Grok** from xAI.
+Google Gemini is next.
 
 ## What AskCharts AI does
 
@@ -49,7 +49,7 @@ key gives you live US stock prices (and CME futures, with Polygon): add it in Se
 - A recent Mac, Windows 10 or 11, or Linux (64 bit)
 - About 150 MB of disk, more if you download history
 - Chrome or Edge (Firefox and Safari should work, but I test on Chrome)
-- For AskCharts AI, an API key from Anthropic
+- For AskCharts AI, an API key from Anthropic, OpenAI or xAI
 - Optional: a free Alpaca account, for live US stock prices
 
 ## What gets installed
@@ -100,8 +100,10 @@ it starts by itself whenever you log in.
 Both go in Settings, the gear at the top right. Each key is checked with its provider before it's saved.
 
 1. **AI key, for AskCharts AI.** Settings, AskCharts AI. Pick the provider, paste your key, press Test, pick a
-   model and press Ok. Get a Claude key at [console.anthropic.com](https://console.anthropic.com). You pay
-   Anthropic directly for what you use.
+   model and press Ok. Get a key at [platform.claude.com](https://platform.claude.com) for Claude,
+   [platform.openai.com](https://platform.openai.com/api-keys) for GPT or [console.x.ai](https://console.x.ai)
+   for Grok. You pay the provider directly for what you use. Each provider keeps its own key, so you can switch
+   between them without pasting a key again.
 2. **Alpaca key, for live US stock prices (optional).** Settings, Data keys. Paste the key ID and secret key,
    leave the feed on IEX for a free account, and press Save and check. Get the keys from a free account at
    [alpaca.markets](https://alpaca.markets), under API Keys. A Polygon (now Massive) key goes in the same tab.
@@ -118,11 +120,11 @@ Without any keys, the charts, data and everything else still work. Only AskChart
 2. **Pick an interval.** Click the interval next to it, or type one on the chart: `5` for 5 minutes, `4h`, `1D`.
 3. **Ask for the rest.** Open AskCharts AI from the robot on the right and say what you want, like "Add RSI and
    a 50 period moving average".
-4. **More history (optional).** Settings, Market data downloads Kraken's full history (about 10 GB) and turns on
-   XRPL On chain. XRPL On chain follows the XRP Ledger through a public server, which is about 15 GB of
-   downloads a day. When it starts it also fills in up to 90 days of history from askcharts.pro (about 0.5 MB
-   a day, every file signed and checked), so the charts aren't empty. It only downloads, and you can switch it
-   off in the same place.
+4. **More history (optional).** Settings, Market data downloads Kraken's full history (about 10 GB), and
+   Settings, On chain data turns on XRPL On chain. XRPL On chain follows the XRP Ledger through a public
+   server, which is about 15 GB of downloads a day. When it starts it also fills in up to 90 days of history
+   from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't empty. It only
+   downloads, and you can switch it off in the same place.
 
 The [quick start](docs/quick-start.md) walks through the screen: the chart, the toolbars and the panels.
 

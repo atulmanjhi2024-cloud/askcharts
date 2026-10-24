@@ -1,7 +1,7 @@
 # onchain: XRPL On chain
 
 The data behind the On chain indicators (Indicators, On chain): a collector follows the XRP Ledger and keeps
-one row per validated ledger. Turn it on in Settings, Market data. AskCharts' runner (`run.mjs`) starts and
+one row per validated ledger. Turn it on in Settings, On chain data. AskCharts' runner (`run.mjs`) starts and
 stops it.
 
 ## What each ledger row holds

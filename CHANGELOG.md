@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.17 (2026-10-24)
+
+AskCharts AI works with OpenAI and xAI as well as Anthropic, and XRPL On chain has a Settings tab of its own.
+
+- AskCharts AI runs on GPT from OpenAI or Grok from xAI, as well as Claude from Anthropic. In Settings, AskCharts
+  AI pick the provider, paste its key, press Test, choose a model and press Ok. Each provider keeps its own key
+  and model, so switching back and forth doesn't mean pasting a key again, and a key is only ever sent to its own
+  provider. A Claude key you saved before stays where it was.
+- OpenAI models go through OpenAI's Responses API, because its newer models (gpt-5.6 and on) won't use tools on
+  the older API while they're reasoning, and every chart change AskCharts AI makes is a tool. AskCharts asks
+  OpenAI not to store the conversation.
+- AskCharts AI doesn't add an indicator that's already on the chart with the same settings. A chart keeps its
+  indicators when the symbol changes, so asking for RSI and MACD on a new symbol used to add a second set. If a
+  chart already has two copies, it says so and offers to remove the extra one.
+- Kraken calls Bitcoin XBT. Typing XBTUSD in symbol search now finds it, and the chart and AskCharts AI's steps
+  call it BTC / USD.
+- XRPL On chain moved to its own tab, Settings, On chain data, next to Market data. Market data keeps the price
+  history, and the new tab has room for other chains later. A saved server now says so in the same section.
+- When a provider doesn't report how many tokens an answer used (Grok doesn't), the answer no longer shows
+  "0 tokens".
+
 ## 0.1.16 (2026-10-24)
 
 Download Kraken history works on a fresh install now, and XRPL On chain copes with a public server that says to slow down.

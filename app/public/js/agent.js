@@ -8,7 +8,7 @@ import { newUid } from "./chart.js";
 import { indicatorFavs } from "./indicatorpicker.js";
 import { THEME_KEYS } from "./chartsettings.js";
 import { parseTf } from "../lib/series.js";
-import { AGENT_TOOL_BY_NAME, DRAWABLE } from "../lib/agent-tools.js";
+import { AGENT_TOOL_BY_NAME, DRAWABLE, sameIndicator } from "../lib/agent-tools.js";
 import { iso, round, parseWhen, barIndexAt, summary, levels } from "../lib/agent-analysis.js";
 
 export const MAX_CALLS = 20; // tool calls in one answer
@@ -239,6 +239,8 @@ export class AgentTools {
     const snap = def.read || def.view ? null : this.snapshot();
     try {
       const r = await this[call.name](input);
+      // nothing changed (it was already there): shown as a look, with nothing to undo
+      if (r.unchanged) return { ...r, snap: null, read: true, view: !!def.view };
       return { ...r, snap, read: !!def.read, view: !!def.view };
     } catch (e) {
       // a change that broke halfway goes back to where it started
@@ -274,15 +276,20 @@ export class AgentTools {
       bars: bars.length,
       visible: r && bars.length ? { from: iso(p.timeOfLogical(Math.max(0, r.from))), to: iso(p.timeOfLogical(Math.min(bars.length - 1, r.to))) } : null,
       lastBar: last ? { time: iso(last.time), open: round(last.open), high: round(last.high), low: round(last.low), close: round(last.close), volume: round(last.volume) } : null,
-      indicators: (p.cfg.indicators || []).map((ind) => ({
-        uid: ind.uid,
-        id: ind.id,
-        name: BY_ID[ind.id]?.name || ind.id,
-        inputs: ind.params || {},
-        latest: this.latest(p, ind),
-        ...(ind.hidden ? { hidden: true } : {}),
-        ...(p.indResults?.[ind.uid]?.error ? { error: String(p.indResults[ind.uid].error).slice(0, 160) } : {}),
-      })),
+      indicators: (p.cfg.indicators || []).map((ind, k, all) => {
+        // a second copy of one listed before it (same inputs), often left from earlier
+        const twin = all.slice(0, k).find((x) => sameIndicator(BY_ID[ind.id], x, ind));
+        return {
+          uid: ind.uid,
+          id: ind.id,
+          name: BY_ID[ind.id]?.name || ind.id,
+          inputs: ind.params || {},
+          latest: this.latest(p, ind),
+          ...(ind.hidden ? { hidden: true } : {}),
+          ...(twin ? { sameAs: twin.uid } : {}),
+          ...(p.indResults?.[ind.uid]?.error ? { error: String(p.indResults[ind.uid].error).slice(0, 160) } : {}),
+        };
+      }),
       drawings: withDrawings
         ? items.slice(0, 40).map((d) => ({
             id: d.id,
@@ -311,6 +318,9 @@ export class AgentTools {
     const q = String(input.query || "").trim();
     if (!q) fail("Give something to search for.");
     const rows = await api.search(q);
+    // the names found, for the steps that follow ("BTC / USD (Kraken)", not Kraken's XBTUSD)
+    const names = (this.app.names ||= {});
+    for (const r of rows) if (r.name && !names[r.symbol]) names[r.symbol] = r.name;
     return { label: `Looked up ${q}`, result: rows.slice(0, 10).map((r) => ({ symbol: r.symbol, name: r.name, type: r.type, exchange: r.exchange })) };
   }
   async barsFor(symbol, interval, count) {
@@ -546,6 +556,18 @@ export class AgentTools {
     const def = BY_ID[input.id] || INDICATORS.find((d) => d.name.toLowerCase() === String(input.id).toLowerCase()) || fail(`Unknown indicator id "${input.id}"; indicator_catalog finds the right one.`);
     const params = this.inputs(def, input.inputs);
     for (const inp of def.inputs || []) if (inp.type === "time" && params[inp.key] == null && !inp.default) fail(`${shortName(def)} needs ${inp.key}, a time to start from (like 2026-10-19T14:30).`);
+    // the same indicator with the same inputs is already on this chart (say, kept from before the symbol
+    // changed): it isn't added twice
+    const want = { id: def.id, params: { ...(this.app.settings.indDefaults?.[def.id]?.params || {}), ...params } };
+    const same = (p.cfg.indicators || []).find((x) => sameIndicator(def, x, want));
+    if (same) {
+      const was = `${shortName(def)} ${p.indicatorParamsLabel?.(same) || ""}`.trim();
+      return {
+        unchanged: true,
+        label: `${was} was already on the chart${same.hidden ? ", hidden" : ""}`,
+        result: { uid: same.uid, id: def.id, already: true, ...(same.hidden ? { hidden: true } : {}), note: `It was already on this chart with these inputs, so it wasn't added again. Tell the person it's there.${same.hidden ? " It's hidden: indicator_edit with hidden false shows it." : ""}` },
+      };
+    }
     const colors = this.colors(def, input.colors);
     const uid = p.addIndicator(def.id, params);
     const ind = p.cfg.indicators.find((x) => x.uid === uid);

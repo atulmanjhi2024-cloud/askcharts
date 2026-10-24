@@ -484,7 +484,7 @@ async function handle(req, res) {
       if (req.method === "PUT") return send(res, 200, await copilot.setConfig(await readBody(req)));
     }
     if (p === "/api/copilot/models" && req.method === "POST") return send(res, 200, await copilot.listModels(await readBody(req)));
-    if (p === "/api/copilot/key" && req.method === "DELETE") return send(res, 200, copilot.removeKey());
+    if (p === "/api/copilot/key" && req.method === "DELETE") return send(res, 200, copilot.removeKey(q.provider));
     if (p === "/api/copilot/chat" && req.method === "POST") return await copilot.chat(await readBody(req, 3e5), res);
     if (p === "/api/webhook-test" && req.method === "POST") {
       const { url: hook } = await readBody(req);

@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FILE = process.env.QT_ONCHAIN || path.join(ROOT, "..", "onchain", "data", "xrpl.sqlite");
 const STATUS = path.join(path.dirname(FILE), "xrpl-status.json");
-// On or off, and which server (Settings, Market data): AskCharts' runner reads it and starts or stops
+// On or off, and which server (Settings, On chain data): AskCharts' runner reads it and starts or stops
 // the collector (onchain/xrpl.mjs).
 const SETTINGS = path.join(path.dirname(FILE), "settings.json");
 // Ripple's public server: xrplcluster.com's free allowance is less than a ledger with its transactions every
@@ -125,7 +125,7 @@ export function xrpl(q = {}) {
   return { ...base, buckets, whales, first: span.first, last: span.last, dexFirst: dx.first };
 }
 
-// Settings, Market data: whether the collector follows the ledger, from which server, whether it fills in from
+// Settings, On chain data: whether the collector follows the ledger, from which server, whether it fills in from
 // the shared history (on unless turned off), and how it's doing.
 function saved() {
   try {

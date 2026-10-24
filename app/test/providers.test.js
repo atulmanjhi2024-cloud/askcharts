@@ -119,6 +119,14 @@ test("the chart note for a fallback is plain words: no hostnames or HTTP codes",
   assert.doesNotMatch(text, /HTTP|\.com|returned/);
 });
 
+test("Kraken's coin names typed into search read as everyone else's", () => {
+  assert.equal(P.commonCoin("XBTUSD"), "BTCUSD");
+  assert.equal(P.commonCoin("XBT"), "BTC");
+  assert.equal(P.commonCoin("XDGUSD"), "DOGEUSD");
+  assert.equal(P.commonCoin("XRPUSD"), "XRPUSD");
+  assert.equal(P.commonCoin("ETHXBT"), "ETHXBT");
+});
+
 test("Kraken pairs are keyed by the names everyone else uses (BTC, DOGE), valued by Kraken's own", async () => {
   const { krakenPairMap } = await import("../lib/providers.js");
   const m = krakenPairMap({

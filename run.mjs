@@ -225,7 +225,7 @@ setTimeout(() => {
   setInterval(() => automatic() && history("update"), 3600e3);
 }, 600e3);
 
-// ---- XRPL On chain: on, off, which server and the shared history, from Settings, Market data
+// ---- XRPL On chain: on, off, which server and the shared history, from Settings, On chain data
 const xrplSettings = path.join(dirs.onchain, "settings.json");
 // the shared history: up to 90 days of ledgers, published hourly and signed (onchain/history-sync.mjs)
 const XRPL_HISTORY = "https://data.askcharts.pro";
