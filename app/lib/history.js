@@ -182,6 +182,8 @@ export function status() {
   if (k.job && !(k.job.pid && alive(k.job.pid))) k.job = null;
   if (a.job && !(a.job.pid && alive(a.job.pid))) a.job = null;
   if (b.job && !(b.job.pid && alive(b.job.pid))) b.job = null;
+  // what holds the importer (one writer at a time), so a waiting request can say what it waits for
+  const running = st.running?.pid && alive(st.running.pid) ? st.running : null;
   return {
     available: existsSync(FILE),
     updatedAt: st.updatedAt ?? null,
@@ -193,6 +195,7 @@ export function status() {
     // Settings, Crypto data: Binance's coins (history/binance.mjs), off until downloaded
     binance: { ...b, pairs: b.pairs || {}, list: set?.binance?.pairs ?? [], automatic: set?.binance?.automatic ?? false },
     queued: queued(),
+    running,
     jobs: !jobsOff(),
   };
 }

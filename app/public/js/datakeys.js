@@ -45,7 +45,7 @@ export function dataKeys() {
       const feed = f.alpaca.feed ?? (a.feed || "iex");
       h += `<label class="ai-f"><span>Feed</span><select class="cs-num ai-in" data-dk="alpaca.feed"><option value="iex" ${feed === "iex" ? "selected" : ""}>IEX (free accounts)</option><option value="sip" ${feed === "sip" ? "selected" : ""}>SIP (Alpaca's paid plan)</option></select></label>`;
       h += acts("alpaca", a) + flash("alpaca");
-      h += `<div class="ai-sub md-tight">A free account at alpaca.markets gives live US stock prices on the IEX feed. The keys are under API Keys in Alpaca's dashboard.${a.set ? " To change only the feed, pick it and press Save and check." : ""}</div>`;
+      h += `<div class="ai-sub md-tight">A free account at alpaca.markets gives live US stock prices on the IEX feed. IEX is one exchange, so daily and longer charts keep the official daily bars from Nasdaq or Yahoo. The keys are under API Keys in Alpaca's dashboard.${a.set ? " To change only the feed, pick it and press Save and check." : ""}</div>`;
 
       h += '<div class="md-sub">Polygon (now Massive)</div>';
       h += state(p, `key ending in ${esc(p.hint || "")}.`);

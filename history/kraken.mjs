@@ -68,6 +68,11 @@ function noteJob(note) {
     (s.kraken ||= {}).job = note ? { ...note, pid: process.pid, at: iso() } : null;
   });
 }
+// what holds the lock (Kraken's, the stock history's or Binance's work), so a request waiting its turn on
+// the page can say what it waits for
+function running(r) {
+  status((s) => (s.running = r ? { ...r, pid: process.pid, at: iso() } : null));
+}
 
 // ---- disk: imports stop before the store fills the disk
 function diskCheck(needGB = 0) {
@@ -359,6 +364,7 @@ async function update(db, pairs, { now: forced = false } = {}) {
   }
   // a store with no Kraken bars yet starts from Kraken's archive (the first download); stock bars don't count
   if (!hasKrakenBars(db)) {
+    running({ source: "kraken", cmd: "download" });
     try {
       await fullArchive();
       await bulk(db, pairs, false);
@@ -775,6 +781,7 @@ export async function jobs(db) {
     const file = path.join(JOBS_DIR, files[0]);
     const job = readJson(file, null);
     fs.rmSync(file, { force: true });
+    running({ source: job?.source || "kraken", cmd: job?.cmd, pair: job?.pair, symbol: job?.symbol });
     // the stock history's and Binance's requests, with their own names and results
     const other = { alpaca, binance }[job?.source];
     if (other) {
@@ -888,16 +895,19 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const chosen = named.length ? named : settings().kraken.pairs;
   try {
     if (writes.includes(cmd)) status((s) => (s.schema = SCHEMA));
+    if (writes.includes(cmd) && cmd !== "jobs") running({ source: "kraken", cmd });
     if (cmd === "bulk") await bulk(db, chosen, flags.has("--force"));
     else if (cmd === "update") {
       await update(db, chosen, { now: flags.has("--now") });
       // the stock history and Binance's too, each on its own Automatic (nothing to do while it's off)
       if (!named.length)
-        for (const [name, other] of [["stocks", alpaca], ["Binance", binance]])
+        for (const [name, other, source] of [["stocks", alpaca, "alpaca"], ["Binance", binance, "binance"]]) {
+          running({ source, cmd: "update" });
           await other.update(db, { now: flags.has("--now") }).catch((e) => {
             log(`${name}: ${e.message}`);
             process.exitCode = 1;
           });
+        }
     }
     else if (cmd === "jobs") await jobs(db);
     else if (cmd === "add") await addPair(db, named[0]);
@@ -908,7 +918,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     else printStatus(db);
     if (writes.includes(cmd)) diskCheck();
   } finally {
-    if (writes.includes(cmd)) noteJob(null);
+    if (writes.includes(cmd)) {
+      noteJob(null);
+      running(null);
+    }
     db.close();
   }
 }

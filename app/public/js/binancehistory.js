@@ -2,7 +2,7 @@
 // its first month there, for BINANCE charts. Like Kraken's, the page shows what the importer did and asks it for
 // more (history/data/jobs, source "binance"); the importer runs outside the app. Off until it's started here.
 import { api, esc } from "./api.js";
-import { when } from "./marketdata.js";
+import { when, waitingFor } from "./marketdata.js";
 
 const PAIR = /^[A-Z0-9]{2,20}$/;
 // Kraken's names for the coins it lists in dollars, as Binance's USDT pairs (XBTUSD is BTCUSDT)
@@ -40,7 +40,7 @@ export function binanceHistory(app) {
     async load() {
       try {
         const s = await api.get("/api/history/status");
-        const json = JSON.stringify([s.binance, (s.queued || []).filter((x) => x.source === "binance"), s.jobs, s.kraken?.coins]);
+        const json = JSON.stringify([s.binance, (s.queued || []).filter((x) => x.source === "binance"), s.running, s.jobs, s.kraken?.coins]);
         st.err = "";
         if (json === st.json) return false;
         st.json = json;
@@ -78,7 +78,7 @@ export function binanceHistory(app) {
       const state = b.job
         ? ["busy", `Downloading ${b.job.note || b.job.pair || ""}…`]
         : q.length
-          ? ["busy", "Starting…"]
+          ? ["busy", `${waitingFor(s) || "Starting"}…`]
           : b.failures
             ? ["err", `The last update failed: ${b.lastError?.message || "no reason given"}.${b.lastOk ? ` Last good update ${when(b.lastOk)}.` : ""}`]
             : !b.automatic

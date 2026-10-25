@@ -20,6 +20,19 @@ export function when(iso, { time = true } = {}) {
 }
 const gb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round((b || 0) / 1e6)} MB`);
 const JOB_WORDS = { update: "Update now", add: "Add", remove: "Remove", verify: "Accuracy check", gaps: "Gap scan", automatic: "Automatic" };
+// Kraken's own waiting requests (the stock history's and Binance's carry a source)
+const mine = (s) => (s.queued || []).filter((x) => !x.source);
+// What holds the importer while a request waits its turn (one writer at a time), in words:
+// "Waiting for the Binance download to finish". Empty when nothing is running.
+const RUN_NAMES = { kraken: "Kraken", alpaca: "stock", binance: "Binance" };
+const RUN_NOUNS = { start: "download", download: "download", add: "download", quarterly: "download", bulk: "import", verify: "accuracy check", gaps: "gap scan" };
+export function waitingFor(s) {
+  const r = s?.running,
+    n = RUN_NAMES[r?.source];
+  if (!n) return "";
+  if (r.cmd === "remove") return `Waiting for the ${n} history to finish removing ${r.pair || r.symbol || "a coin"}`;
+  return `Waiting for the ${n} ${RUN_NOUNS[r.cmd] || "update"} to finish`;
+}
 const COMMON = { XBT: "BTC", XDG: "DOGE" };
 // Kraken's quote currencies, longest first so "USDT"/"USDC" aren't cut short as "USD" (a pair can only
 // end with one of these, so there's no real ambiguity either way).
@@ -77,16 +90,16 @@ export function marketData() {
       // store counts as nothing: the importer makes one the first time it runs for any reason.
       const none = !s.available || !(s.kraken?.coins || []).some((c) => s.kraken.pairs?.[c]?.first);
       if (none && !s.kraken?.automatic && !s.kraken?.job) {
-        const asked = (s.queued || []).some((x) => x.cmd === "automatic" && x.on);
+        const asked = mine(s).some((x) => x.cmd === "automatic" && x.on);
         h += `<div class="md-wrap"><p class="ai-lead">Kraken's history isn't downloaded yet, so KRAKEN charts show Kraken's last 720 bars. Downloading it gives them years of Kraken's own bars, from each coin's first trade, and keeps them up to date every hour.</p>`;
         h += `<p class="ai-note">The first download is Kraken's archive, about 10 GB. It needs about 34 GB free while it comes in and is checked, and 20 GB after. Then each coin catches up from the archive's end (the last quarter's) at Kraken's pace: minutes for a quiet coin, an hour or more for a busy one.</p>`;
-        h += asked ? '<div class="md-state busy"><i></i><span>Starting the download…</span></div>' : '<div class="md-acts"><button class="btn primary" data-md="start">Download Kraken history</button></div>';
+        h += asked ? `<div class="md-state busy"><i></i><span>${esc(waitingFor(s) || "Starting the download")}…</span></div>` : '<div class="md-acts"><button class="btn primary" data-md="start">Download Kraken history</button></div>';
         if (st.flash && Date.now() - st.flashAt < 30000) h += `<div class="ai-status ${st.tone}">${esc(st.flash)}</div>`;
         return `${h}</div>`;
       }
       const k = s.kraken,
         coins = k.coins || [],
-        q = s.queued || [];
+        q = mine(s);
       // a request still waiting shows as made: the importer applies it when its turn comes
       const auto = q.filter((x) => x.cmd === "automatic").at(-1)?.on ?? k.automatic;
       const removing = new Set(q.filter((x) => x.cmd === "remove").map((x) => x.pair)),
@@ -149,14 +162,19 @@ export function marketData() {
     tone(s) {
       const k = s.kraken;
       if (k.failures >= 1) return "err";
-      if (k.job || s.queued?.length) return "busy";
+      if (k.job || mine(s).length) return "busy";
       if (!k.automatic || (k.lastOk && Date.now() - Date.parse(k.lastOk) > 3 * 3600e3)) return "warn";
       return "ok";
     },
     state(s) {
-      const k = s.kraken;
-      if (k.job) return `Working: ${[k.job.pair, k.job.note || k.job.kind].filter(Boolean).join(", ")}${s.queued?.length ? `. Waiting: ${s.queued.map((q) => JOB_WORDS[q.cmd] + (q.pair ? ` ${q.pair}` : "")).join(", ")}` : ""}`;
-      if (s.queued?.length) return `Waiting to start: ${s.queued.map((q) => JOB_WORDS[q.cmd] + (q.pair ? ` ${q.pair}` : "")).join(", ")}`;
+      const k = s.kraken,
+        q = mine(s),
+        asked = q.map((x) => JOB_WORDS[x.cmd] + (x.pair ? ` ${x.pair}` : "")).join(", ");
+      if (k.job) return `Working: ${[k.job.pair, k.job.note || k.job.kind].filter(Boolean).join(", ")}${q.length ? `. Waiting: ${asked}` : ""}`;
+      if (q.length) {
+        const w = waitingFor(s);
+        return w ? `${w}. Then: ${asked}` : `Waiting to start: ${asked}`;
+      }
       if (k.failures >= 1) return `The last ${k.failures > 1 ? `${k.failures} updates` : "update"} failed: ${k.lastError?.message || "no reason given"}.${k.lastOk ? ` Last good update ${when(k.lastOk)}.` : ""}`;
       if (!k.automatic) return "Automatic updates are off. Update now still works.";
       if (k.lastOk && Date.now() - Date.parse(k.lastOk) > 3 * 3600e3) return `No update since ${when(k.lastOk)}. Is the hourly timer running?`;

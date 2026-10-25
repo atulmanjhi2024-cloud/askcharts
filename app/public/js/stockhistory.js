@@ -3,7 +3,7 @@
 // page shows what the importer did and asks it for more (history/data/jobs, source "alpaca"); the importer
 // runs outside the app, so a download carries on through a restart. Off until it's started here.
 import { api, esc } from "./api.js";
-import { when } from "./marketdata.js";
+import { when, waitingFor } from "./marketdata.js";
 
 const SYMBOL = /^[A-Z][A-Z0-9.]{0,9}$/;
 
@@ -37,7 +37,7 @@ export function stockHistory(app) {
     async load() {
       try {
         const [s, k] = await Promise.all([api.get("/api/history/status"), api.get("/api/feeds/keys")]);
-        const json = JSON.stringify([s.alpaca, (s.queued || []).filter((x) => x.source === "alpaca"), s.jobs, k?.alpaca?.set]);
+        const json = JSON.stringify([s.alpaca, (s.queued || []).filter((x) => x.source === "alpaca"), s.running, s.jobs, k?.alpaca?.set]);
         st.err = "";
         if (json === st.json) return false;
         st.json = json;
@@ -78,7 +78,7 @@ export function stockHistory(app) {
       const state = a.job
         ? ["busy", `Downloading ${a.job.symbol || ""}${a.job.note ? `: ${a.job.note.replace(/^\S+ /, "")}` : ""}…`]
         : q.length
-          ? ["busy", "Starting…"]
+          ? ["busy", `${waitingFor(s) || "Starting"}…`]
           : a.failures
             ? ["err", `The last update failed: ${a.lastError?.message || "no reason given"}.${a.lastOk ? ` Last good update ${when(a.lastOk)}.` : ""}`]
             : !a.automatic

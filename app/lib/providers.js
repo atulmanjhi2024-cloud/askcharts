@@ -1162,7 +1162,8 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
       // The stock history (Settings, Stock data) holds the whole market's bars to about an hour ago
       const want = stored ? fromStore("US", "The whole market's bars from Alpaca", "Settings, Stock data") : limit;
       // Your own keys (data/feeds.json) go first; the public sources stay behind them.
-      chain = feeds.stockChain(t, tf, want).concat(isIntraday(tf)
+      const keys = feeds.stockChain(t, tf, want);
+      const pub = isIntraday(tf)
         ? [
             ["Yahoo", () => yahooCandles(t, tf, want)],
             ["Nasdaq", () => nasdaqCandles(t, tf, want)],
@@ -1170,7 +1171,12 @@ export async function getCandles(rawSymbol, tf = "1D", limit = 1500) {
         : [
             ["Nasdaq", () => nasdaqCandles(t, tf, want)],
             ["Yahoo", () => yahooCandles(t, tf, want)],
-          ]);
+          ];
+      // Except daily and longer on Alpaca's free IEX feed: IEX is one exchange, so its days end on IEX's last
+      // trade with a few percent of the volume (AAPL: 34 of 42 closes off, Oct 2026). Nasdaq's and Yahoo's are
+      // the official daily bars; IEX stands in when neither answers.
+      const iex = (c) => c[0] === "Alpaca (IEX)";
+      chain = isIntraday(tf) ? keys.concat(pub) : [...keys.filter((c) => !iex(c)), ...pub, ...keys.filter(iex)];
     } else {
       chain = [["Yahoo", () => yahooCandles(t, tf, limit)]];
     }
@@ -1547,9 +1553,19 @@ export async function search(q) {
     ];
     for (const list of await Promise.all(tasks)) results.push(...list);
   }
+  // What was typed in full goes first: AMD the stock before AMDBUSDT, Binance's AMD token. Forex and metals lead
+  // the exact matches (EURUSD the pair before Kraken's EUR/USD, GOLD and XAU as gold); otherwise exact matches
+  // keep their order (BTC: Bitcoin's pairs, then the US fund whose ticker is BTC), and so does the rest.
+  const exact = (r) => {
+    const t = r.symbol.slice(r.symbol.indexOf(":") + 1).replace(/1!$/, ""),
+      base = r.name.split(" / ")[0].toUpperCase();
+    if (r.exchange === "FX") return t === query || t === `${query}USD` || base === query ? 2 : 0;
+    return t === query || (r.type === "crypto" && base === coin) ? 1 : 0;
+  };
   const seen = new Set();
   return results
     .filter((r) => !seen.has(r.symbol) && seen.add(r.symbol))
+    .sort((a, b) => exact(b) - exact(a))
     .slice(0, 30);
 }
 

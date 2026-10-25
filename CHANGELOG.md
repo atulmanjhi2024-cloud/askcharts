@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.23 (2026-10-24)
+
+Daily stock charts get the official closes, search finds the stock you typed, and a history download that's
+waiting says what for.
+
+- **Official daily stock bars on a free Alpaca key.** The free key's IEX feed is one exchange, so its daily bars
+  ended on IEX's last trade and counted a few percent of the day's volume. Daily and longer stock charts now come
+  from Nasdaq or Yahoo, which carry the official bars, and IEX only fills in when neither answers. Minute and hour
+  charts still come live from your key.
+- **Search puts what you typed first.** Typing AMD listed Binance's AMD token (AMDBUSDT) above AMD the stock, and
+  the same for AAPL, SPY, TSLA and the other stocks Binance has a token for. What you type in full now comes
+  first. Coins, futures, forex and gold come up as before.
+- **A waiting download says what it waits for.** One history download runs at a time, so a stock or Binance
+  download asked for during Kraken's hourly update said "Starting…" until its turn. It now says "Waiting for the
+  Kraken update to finish…". Kraken's own section also stops showing the stock and Binance requests as its own
+  (it said "Waiting to start: undefined").
+- **Chart notes you can read.** A note under the chart's legend, like the one about the IEX feed, now sits on the
+  chart's own colour on one line, instead of across the candles.
+- **Docs.** A new Architecture page (docs/ARCHITECTURE.md, with a diagram) shows how the pieces fit and where your
+  data lives. The server guide has a new appendix on free and low cost places to run AskCharts, with prices as of
+  October 2026.
+
 ## 0.1.22 (2026-10-24)
 
 A coin Binance doesn't list no longer gets onto the Binance history's list, or fails its hourly update.

@@ -40,6 +40,8 @@ const bar = (t, k) => ({
 
 let alpacaStatus = 200;
 let polygonFuturesStatus = 200;
+// Nasdaq and Yahoo not answering (500, not 429: a 429 rests Yahoo for minutes, for the tests after too)
+let publicDown = false;
 const calls = [];
 globalThis.fetch = async (url, opts = {}) => {
   const u = new URL(url);
@@ -74,6 +76,23 @@ globalThis.fetch = async (url, opts = {}) => {
       .map((t, i) => ({ window_start: t * 1e9, open: 20000 + i, high: 20001 + i, low: 19999 + i, close: 20000.5 + i, volume: 50 }))
       .reverse();
     return Response.json({ results: rows, status: "OK" });
+  }
+  if (publicDown && ["api.nasdaq.com", "query1.finance.yahoo.com"].includes(u.host)) return new Response("down", { status: 500 });
+  // Nasdaq's daily history: 30 days to DAY, official closes 200 and up; nothing yet today
+  // Binance's pairs, for search: a stock token (AMDB) beside two Bitcoin pairs
+  if (["api.binance.com", "data-api.binance.vision"].includes(u.host) && u.pathname === "/api/v3/exchangeInfo")
+    return Response.json({ symbols: [["AMDBUSDT", "AMDB", "USDT"], ["BTCUSDT", "BTC", "USDT"], ["BTCUSDC", "BTC", "USDC"]].map(([symbol, baseAsset, quoteAsset]) => ({ symbol, baseAsset, quoteAsset, status: "TRADING" })) });
+  if (u.host === "api.nasdaq.com") {
+    // Nasdaq's ticker lookup, for search
+    if (u.pathname.startsWith("/api/autocomplete/")) {
+      const q = u.searchParams.get("search").toUpperCase();
+      const all = [["AMD", "Advanced Micro Devices, Inc. Common Stock", "STOCKS"], ["AMDL", "GraniteShares 2x Long AMD Daily ETF", "ETF"], ["BTC", "Grayscale Bitcoin Mini Trust ETF", "ETF"]];
+      return Response.json({ data: all.filter(([t]) => t.startsWith(q)).map(([symbol, name, asset]) => ({ symbol, name, asset, exchange: "NASDAQ-GS" })) });
+    }
+    if (u.pathname.endsWith("/chart")) return Response.json({ data: { chart: [], volume: "0" } });
+    const day = (i) => new Date((DAY - i * 86400) * 1000);
+    const rows = Array.from({ length: 30 }, (_, i) => ({ date: `${day(i).getUTCMonth() + 1}/${day(i).getUTCDate()}/${day(i).getUTCFullYear()}`, open: "$199.00", high: "$202.00", low: "$198.00", close: `$${200 + i}.00`, volume: "50,000,000" }));
+    return Response.json({ data: { tradesTable: { rows } } });
   }
   if (u.host === "query1.finance.yahoo.com") {
     const ts = fiveMin;
@@ -158,17 +177,39 @@ test("an Alpaca key takes over US stock charts: session bars only, keys in heade
   );
 });
 
-test("daily bars from a key land on the trading date at UTC midnight, like the public sources", async () => {
+test("on the free IEX feed, daily and longer charts take the official daily bars: Nasdaq, then Yahoo", async () => {
+  calls.length = 0;
   const r = await P.getCandles("US:MSFT", "1D", 20);
-  assert.equal(r.provider, "Alpaca (IEX)");
-  assert.ok(r.candles.every((b) => b.time % 86400 === 0));
-  assert.equal(r.candles.at(-1).time, DAY);
+  assert.equal(r.provider, "Nasdaq");
+  assert.equal(r.candles.at(-1).close, 200, "Nasdaq's close, not IEX's last trade");
+  assert.equal(calls.filter((c) => c.host === "data.alpaca.markets").length, 0, "IEX isn't asked while Nasdaq answers");
+  const w = await P.getCandles("US:MSFT", "1W", 3);
+  assert.equal(w.provider, "Nasdaq");
+  // intraday stays on the key
+  assert.equal((await P.getCandles("US:MSFT", "15m", 10)).provider, "Alpaca (IEX)");
 });
 
-test("weekly charts are built from the key's daily bars", async () => {
-  const r = await P.getCandles("US:NVDA", "1W", 3);
-  assert.equal(r.provider, "Alpaca (IEX)");
-  assert.ok(r.candles.length >= 3);
+test("IEX's daily bars stand in when Nasdaq and Yahoo don't answer, on the trading date at UTC midnight", async () => {
+  publicDown = true;
+  try {
+    const r = await P.getCandles("US:ORCL", "1D", 20);
+    assert.equal(r.provider, "Alpaca (IEX)");
+    assert.ok(r.candles.every((b) => b.time % 86400 === 0));
+    assert.equal(r.candles.at(-1).time, DAY);
+    assert.ok(r.notes.some((n) => /IEX trades only/.test(n)), r.notes.join(" | "));
+    const w = await P.getCandles("US:NVDA", "1W", 3);
+    assert.equal(w.provider, "Alpaca (IEX)");
+    assert.ok(w.candles.length >= 3, "weekly bars built from the key's daily bars");
+  } finally {
+    publicDown = false;
+  }
+});
+
+test("a SIP key (the whole market) keeps daily charts on the key", async () => {
+  writeFeeds({ alpaca: { keyId: KEYS.keyId, secretKey: KEYS.secretKey, feed: "sip" } });
+  const r = await P.getCandles("US:INTC", "1D", 20);
+  assert.equal(r.provider, "Alpaca (SIP)");
+  assert.equal(r.candles.at(-1).time, DAY);
 });
 
 test("a refused Alpaca key falls back to Polygon, and the chart says why in plain words", async () => {
@@ -239,6 +280,16 @@ test("NQ, MNQ, ES and MES resolve and search as CME futures", async () => {
   const es = await P.search("ES");
   assert.equal(es[0].symbol, "CME:ES1!");
   assert.equal(es[0].type, "futures");
+});
+
+test("search puts what was typed in full first: AMD the stock before AMDBUSDT, Bitcoin's pairs before the fund named BTC", async () => {
+  const amd = (await P.search("AMD")).map((r) => r.symbol);
+  assert.equal(amd[0], "US:AMD", amd.join());
+  assert.ok(amd.includes("BINANCE:AMDBUSDT") && amd.includes("US:AMDL"), "the rest are still listed");
+  const btc = (await P.search("btc")).map((r) => r.symbol);
+  assert.deepEqual(btc.slice(0, 3), ["BINANCE:BTCUSDT", "BINANCE:BTCUSDC", "US:BTC"], btc.join());
+  for (const [typed, first] of [["EURUSD", "FX:EURUSD"], ["gold", "FX:XAUUSD"], ["XAU", "FX:XAUUSD"]])
+    assert.equal((await P.search(typed))[0].symbol, first, typed);
 });
 
 test("without a Polygon key, futures chart Yahoo's delayed feed and say so", async () => {
