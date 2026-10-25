@@ -189,7 +189,7 @@ Alerts on the XRPL On chain indicators.
 
 A server guide without Docker, and your own indicators load without a warning.
 
-- The server guide (`docs/server.md`) has a Without Docker section: the install line, a small settings file for
+- The server guide (`docs/SERVER.md`) has a Without Docker section: the install line, a small settings file for
   systemd, HTTPS through a Cloudflare tunnel or your own web server, your first passkey, and Update now from
   Settings, Updates.
 - Your own indicators get a small `package.json` beside them in the data folder, so Node loads them as the ES

@@ -129,12 +129,12 @@ Without any keys, the charts, data and everything else still work. Only AskChart
    days of history from askcharts.pro (about 0.5 MB a day, every file signed and checked), so the charts aren't
    empty. Each only downloads, and you can switch each off in the same place.
 
-The [quick start](docs/quick-start.md) walks through the screen: the chart, the toolbars and the panels.
+The [quick start](docs/QUICK-START.md) walks through the screen: the chart, the toolbars and the panels.
 
 ## Install on a server
 
 To reach AskCharts from anywhere, run it on a server with Docker. There it sits behind a sign in with a passkey,
-since the internet can reach it. The [server guide](docs/server.md) covers Docker, the sign in, HTTPS through a
+since the internet can reach it. The [server guide](docs/SERVER.md) covers Docker, the sign in, HTTPS through a
 Cloudflare tunnel, your keys, and prompts you can give your own AI to walk you through it.
 
 ## Architecture

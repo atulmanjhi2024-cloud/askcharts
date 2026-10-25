@@ -1,5 +1,5 @@
 # AskCharts on a server. Copy .env.example to .env, fill it in, then: docker compose up -d
-# The server guide (docs/server.md) walks through it.
+# The server guide (docs/SERVER.md) walks through it.
 services:
   askcharts:
     build: .

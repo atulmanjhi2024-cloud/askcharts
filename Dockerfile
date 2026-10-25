@@ -1,5 +1,5 @@
 # AskCharts on a server: the app, the sign-in gateway and the collectors in one container, kept running
-# by run.mjs. Your data lives in the /data volume. See docs/server.md.
+# by run.mjs. Your data lives in the /data volume. See docs/SERVER.md.
 FROM node:24.21.0-bookworm-slim
 
 # unzip and curl for Kraken's history archives (the slim image has neither)

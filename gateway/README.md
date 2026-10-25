@@ -6,7 +6,7 @@ front of it, and nothing gets through until you're signed in with a passkey (Tou
 Hello or your phone).
 
 The Docker install runs it for you (`run.mjs` starts it when `ASKCHARTS_GATEWAY=1`). The
-[server guide](../docs/server.md) walks through it.
+[server guide](../docs/SERVER.md) walks through it.
 
 ## How sign in works
 
