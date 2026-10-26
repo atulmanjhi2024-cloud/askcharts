@@ -2,6 +2,8 @@
 
 Charts, backtests and an AI that works on the chart for you. Watch the demo at [askcharts.pro](https://askcharts.pro).
 
+![AskCharts AI setting up a 15 minute chart with RSI and MACD and explaining what it did, in the dark and the light theme](docs/askcharts-preview.gif)
+
 AskCharts is a charting platform that runs on your own computer or your own server. It has what you'd expect from
 a trading platform: charts, indicators, drawing tools, alerts, a screener, a strategy tester and bar replay. What
 sets it apart is **AskCharts AI**. You tell it what you want in plain English, and it does it on the chart.
